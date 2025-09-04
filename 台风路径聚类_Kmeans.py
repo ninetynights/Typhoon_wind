@@ -65,11 +65,11 @@ EXTENT = [110, 135, 15, 40]  # [lon_min, lon_max, lat_min, lat_max]
 # 可调参数
 PARAMS = dict(
     # 质控门槛（进入聚类前）
-    min_points_for_cluster=3,
-    min_arclength_km=100.0,
+    min_points_for_cluster=2, # 轨迹点数量
+    min_arclength_km=30.0, # 轨迹弧长（公里）
     # 重采样与聚类
     resample_N=30,
-    k_candidates=[5,6,7,8,9,10,11,12,13,14,15]  # KMeans 聚类候选 K 值,
+    k_candidates=[3,4,5,6,7,8,9,10,11,12,13,14,15]  # KMeans 聚类候选 K 值,
 )
 
 CLUSTER_COLORS = ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd","#8c564b","#e377c2","#7f7f7f"]

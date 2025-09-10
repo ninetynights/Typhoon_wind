@@ -38,7 +38,7 @@ ST_COL = "大风开始时间"
 EN_COL = "大风结束时间"
 
 # 地图范围（浙江近海）
-EXTENT = [110.0, 135.0, 15.0, 40.0]
+EXTENT = [105.0, 140.0, 15.0, 45.0]
 
 # 颜色与线宽
 COLOR_ALL = "#888888"     # 全轨迹底色（仅对被引用到的编号绘制）
@@ -365,6 +365,21 @@ def main():
     plot_selected(hourly_tracks, dfx, out_png, report_csv)
     print("→ 图：", out_png)
     print("→ 报告：", report_csv)
+
+    # ========= 新增：统计影响时长 =========
+    print("统计每个台风的影响时长…")
+    duration_list = []
+    for _, row in dfx.iterrows():
+        tid = str(row[ID_COL]).zfill(4)
+        start = pd.to_datetime(row["大风开始时间"])   # 确认Excel里的列名
+        end   = pd.to_datetime(row["大风结束时间"])   # 确认Excel里的列名
+        duration = (end - start).total_seconds() / 3600.0
+        duration_list.append({"台风编号": tid, "影响时长(小时)": duration})
+
+    duration_csv = os.path.join(OUTPUT_DIR, "台风影响时长统计.csv")
+    pd.DataFrame(duration_list).to_csv(duration_csv, index=False, encoding="utf-8-sig")
+    print("→ 影响时长统计：", duration_csv)
+
 
 if __name__ == "__main__":
     main()

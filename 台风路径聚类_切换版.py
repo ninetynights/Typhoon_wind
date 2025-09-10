@@ -8,7 +8,7 @@
   read_excel_windows → iter_needed_segments → hourly_interp
   （三者优先从 --vis-script 加载；若缺失则使用本文件的 Fallback）
 - 向量化/输出格式完全一致：
-  1) 影响段_体检报告.csv  2) 影响段_簇映射.csv  3) 影响段_路径簇.png
+  1) 影响段_体检报告.csv  2) 影响段_簇映射.csv  3) 影响段_路径簇.pn
 - 仅替换聚类器：可用 --algo 在 KMeans 与 HDBSCAN 之间一键切换。
 
 依赖：

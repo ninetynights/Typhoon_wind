@@ -148,38 +148,54 @@ def plot_station_rose_pair_colored(exceed_counts, sustain_counts, edges_deg,
                                    ty_code, ty_en, ty_cn, stid,
                                    out_png, cmap_name="viridis", norm=None, unify_rlim=False):
     """
-    绘制单站点的超阈值/持续性风玫瑰对比图
+    绘制单站点的超阈值/持续性风玫瑰对比图（使用gridspec布局，避免色标与右侧子图重叠）
     """
+    import matplotlib.gridspec as gridspec
+
     angles_center_deg = 0.5 * (edges_deg[:-1] + edges_deg[1:])
     angles_rad = np.deg2rad(angles_center_deg)
     widths_rad = np.deg2rad(np.diff(edges_deg))
+
     if norm is None:
         vmax = max(int(np.max(exceed_counts)), int(np.max(sustain_counts)), 1)
         norm = mcolors.Normalize(vmin=0, vmax=vmax)
+
     rlim = max(int(np.max(exceed_counts)), int(np.max(sustain_counts)), 1) if unify_rlim else None
     cmap = plt.get_cmap(cmap_name)
-    fig = plt.figure(figsize=(12, 9))
-    ax1, ax2 = plt.subplot(121, polar=True), plt.subplot(122, polar=True)
+
+    fig = plt.figure(figsize=(12, 6))
+    gs = gridspec.GridSpec(1, 3, width_ratios=[1, 1, 0.05], wspace=0.3)
+    ax1 = fig.add_subplot(gs[0, 0], polar=True)
+    ax2 = fig.add_subplot(gs[0, 1], polar=True)
+
     for ax, counts, subtitle in [(ax1, exceed_counts, "Exceedance Hours (>17.3 m/s)"),
                                  (ax2, sustain_counts, f"Sustained Hours (≥{MIN_CONSEC_HOURS}h)")]:
-        ax.set_theta_zero_location('N'); ax.set_theta_direction(-1)
+        ax.set_theta_zero_location('N')
+        ax.set_theta_direction(-1)
         ax.set_rlim(0, max(1, int(np.max(counts))) if rlim is None else max(1, int(rlim)))
-        ax.set_xticks(np.deg2rad(np.arange(0, 360, 45))); ax.set_yticks([])
-        ax.grid(True, alpha=0.3, linestyle=':'); [s.set_visible(False) for s in ax.spines.values()]
-        colors = plt.get_cmap(cmap_name)(norm(counts))
-        ax.bar(angles_rad, counts, width=widths_rad, align='center', color=colors, edgecolor='none')
+        ax.set_xticks(np.deg2rad(np.arange(0, 360, 45)))
+        ax.set_yticks([])
+        ax.grid(True, alpha=0.3, linestyle=':')
+        [s.set_visible(False) for s in ax.spines.values()]
+
+        colors = cmap(norm(counts))
+        ax.bar(angles_rad, counts, width=widths_rad, align='center',
+               color=colors, edgecolor='none')
         ax.set_title(subtitle, y=1.10, fontsize=12)
+
     name_pair = format_pair(ty_cn, ty_en)
     l1 = f"{ty_code}  {name_pair}".strip()
     l2 = f"Station {stid}  (Exceed={int(exceed_counts.sum())} h, Sustain={int(sustain_counts.sum())} h)"
     fig.suptitle(l1 + "\n" + l2, y=0.98, fontsize=14)
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm); sm.set_array([])
-    cbar = fig.colorbar(sm, ax=[ax1, ax2], fraction=0.03, pad=0.08)
-    cbar.set_label("Hours per sector (Unified within typhoon)")
-    fig.tight_layout()
-    fig.savefig(out_png, dpi=200, bbox_inches="tight", pad_inches=0.1)
-    plt.close(fig)
 
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cax = fig.add_subplot(gs[0, 2])
+    cbar = fig.colorbar(sm, cax=cax)
+    cbar.set_label("Hours per sector", rotation=270, labelpad=15)
+
+    fig.savefig(out_png, dpi=300, bbox_inches="tight")
+    plt.close(fig)
 # ----- [修正] 函数：在地图上绘制风玫瑰 -----
 def plot_rose_on_map(ax_map, lon, lat, counts, edges_deg, norm, cmap, scale_factor=0.5):
     """

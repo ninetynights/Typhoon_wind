@@ -1,19 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-大风玫瑰_按站点总体.py（统一色标：所有站点 + 超阈值与持续共用）
+大风玫瑰_按站点总体_色标统一版.py（统一色标：所有站点 + 超阈值与持续共用）
 -----------------------------------------------------------------
-更新要点：
-  1) 统一色标范围（colorbar）：先计算所有站点、两类指标（总小时/持续小时）的扇区最大值，得到 GLOBAL_VMAX，
-     然后全程用同一个 Normalize(0, GLOBAL_VMAX) 着色 → 所有站点、两种指标可直接对比颜色深浅。
-  2) 代码内增加了详细注释与“可调开关”，便于后续理解与调整。
-  3) 地图上的两张迷你玫瑰图（总小时、持续小时）也使用同一把色标（norm_map = (0, GLOBAL_VMAX_TOPK)）。
-
-你可以在“参数区”调整：
-  - THRESHOLD、MIN_CONSEC_HOURS、N_BINS、TOPK_FOR_MAP 等。
-  - UNIFY_RLIM：是否把小玫瑰的半径也统一（默认 False，保持每站点自适应半径，便于观察形状）。
-
-依赖：numpy, pandas, matplotlib, cartopy, netCDF4
+功能概述（增强注释版）：
+  - 按站点统计风速/风向观测，在“所有台风影响时段”内计算两类玫瑰：
+      1) exceed_bins: 风速 > THRESHOLD 的小时数按风向扇区统计（总小时）
+      2) sustain_bins: 连续 >= MIN_CONSEC_HOURS 小时均 > THRESHOLD 的小时数按扇区统计（持续小时）
+  - 输出：
+      * 每站点 CSV（每扇区小时数 + 百分比）
+      * 每站点双子图（左：总小时 / 右：持续小时），颜色使用统一 colorbar（可选）
+      * 地图视图：在地图上绘制若干站点的“迷你风玫瑰”以便空间比较
+  - 设计要点：
+      * 统一色标（norm_global）计算方式：以所有站点、两类指标的扇区最大值为 vmax，
+        从而颜色可以直接用于不同站点/不同指标间的可视化对比。
+      * 迷你玫瑰地图上的指定经纬度处，避免复杂投影转换。
 """
 
 from pathlib import Path
@@ -50,7 +51,13 @@ def ensure_dir(p: Path):
     p.mkdir(parents=True, exist_ok=True)
 
 def rose_bin_counts(deg_values: np.ndarray, edges_deg: np.ndarray) -> np.ndarray:
-    """将角度（度，0-360）按扇区计数。"""
+    """
+    将角度数组（来向，单位度）按指定边界分箱计数。
+    - deg_values: 1D 数组，角度可能存在 NaN（需在调用前滤除）
+    - edges_deg: 扇区边界数组（例如 np.linspace(0,360,N+1)）
+    返回值：每个扇区的计数（长度为 len(edges_deg)-1）
+    说明：使用 np.mod 将角度折回 [0,360) 以避免负角度或超过 360 的值干扰统计。
+    """
     if deg_values.size == 0:
         return np.zeros(len(edges_deg)-1, dtype=int)
     vals = np.mod(deg_values, 360.0)  # 折回 0-360
@@ -58,7 +65,11 @@ def rose_bin_counts(deg_values: np.ndarray, edges_deg: np.ndarray) -> np.ndarray
     return hist.astype(int)
 
 def rle_segments(bool_arr: np.ndarray):
-    """返回 True 连续段 (start, end)（end 为开区间）。"""
+    """
+    找到布尔序列中连续 True 的区间（左闭右开 [start, end)），返回列表 (start, end)。
+    - 常用于识别“持续”时间段，例如连续多小时满足超阈值条件。
+    - 若输入为空返回空列表。
+    """
     if bool_arr.size == 0:
         return []
     b = np.array(bool_arr, dtype=bool)
@@ -70,11 +81,17 @@ def rle_segments(bool_arr: np.ndarray):
 
 def compute_station_roses(wind_speeds, wind_dirs, ty_ids, threshold, min_consec, edges_deg):
     """
-    逐站点计算两类玫瑰的扇区小时数：
-      - exceed_bins[i, :]  : 该站点在“所有台风影响时段”内，WS>threshold 的小时分布（按风向扇区）
-      - sustain_bins[i, :] : “连续 >= min_consec 小时均 > threshold”的小时分布（按风向扇区）
-      - totals_exceed[i]   : 该站点总的超阈值小时数
-      - totals_sustain[i]  : 该站点总的持续小时数
+    对所有站点计算两种玫瑰（总小时与持续小时），按站点返回矩阵与总小时数。
+    输入：
+      - wind_speeds, wind_dirs: shape (time, n_stations)
+      - ty_ids: 每个时刻每站点所属台风内部索引（>=0 表示某台风；<0 表示非台风影响）
+    输出：
+      - exceed_bins: (n_stations, n_bins) 总小时扇区计数（WS > threshold）
+      - sustain_bins: (n_stations, n_bins) 持续小时扇区计数（连续 >= min_consec 小时）
+      - totals_exceed, totals_sustain: 每站点对应的总小时数（用于排序/规模控制）
+    重点说明：
+      - exceed 统计跨所有台风时间的总小时（任何 ty_id >=0 的时刻均考虑，但须同时有风速与风向有效值）。
+      - sustain 在每个台风的连续时间段内独立判定，避免跨台风拼接连续段。
     """
     n_time, n_sta = wind_speeds.shape
     n_bins = len(edges_deg) - 1
@@ -91,14 +108,15 @@ def compute_station_roses(wind_speeds, wind_dirs, ty_ids, threshold, min_consec,
         ws_any = wind_speeds[mask_any, i]
         wd_any = wind_dirs[mask_any, i]
 
+        # 只统计风速/风向同时有效的时刻
         valid_any = np.isfinite(ws_any) & np.isfinite(wd_any)
         gt_any = (ws_any > threshold) & valid_any
 
-        # 总小时玫瑰（把每个满足 gt 的小时，按其风向分扇区计数）
+        # exceed：把每个满足条件的小时按风向扇区计数
         exceed_bins[i, :] = rose_bin_counts(wd_any[gt_any], edges_deg)
         totals_exceed[i]  = int(np.sum(gt_any))
 
-        # 按“站点×台风”拆开做连续段（防跨台风拼接）
+        # sustain：在每个台风段内独立判断连续 True 段（避免不同台风段拼接）
         uniq_ty = sorted({int(k) for k in np.unique(ty_ids[:, i]) if int(k) >= 0})
         for ty in uniq_ty:
             mask_ty = (ty_ids[:, i] == ty)
@@ -122,9 +140,16 @@ def compute_station_roses(wind_speeds, wind_dirs, ty_ids, threshold, min_consec,
 def plot_station_rose_pair_colored(exceed_counts, sustain_counts, edges_deg, title, out_png,
                                    cmap_name="viridis", norm=None):
     """
-    单站点双图：左=总小时，右=持续小时。
-    - 颜色由传入的 `norm` 控制（若为 None，则退化为“本站点自适应”）。
-    - 为了避免副标题与 0°(N) 刻度重叠，标题位置向上（y=1.12）。
+    绘制单站点左右并列的两个极坐标玫瑰：
+      - 左图：总小时（exceed_counts）
+      - 右图：持续小时（sustain_counts）
+    参数说明：
+      - norm: matplotlib.colors.Normalize 对象，若提供可保证不同站点间颜色一致（用于统一色标）
+      - title: 图像总标题（包含站点编号与总小时信息）
+      - out_png: 输出文件路径
+    额外细节：
+      - 为防止副标题遮挡北向刻度，将子图标题上移（y=1.08）。
+      - 在条形顶部标注小时数（如需可关闭）。
     """
     angles_center_deg = 0.5 * (edges_deg[:-1] + edges_deg[1:])
     angles_rad = np.deg2rad(angles_center_deg)
@@ -143,7 +168,7 @@ def plot_station_rose_pair_colored(exceed_counts, sustain_counts, edges_deg, tit
 
     for ax, counts, subtitle in [(ax1, exceed_counts, "Exceedance Hours"),
                                  (ax2, sustain_counts, "Sustained Hours")]:
-        ax.set_theta_zero_location('N')  # 北在上
+        ax.set_theta_zero_location('N')  # 0° 指向北（图上方）
         ax.set_theta_direction(-1)       # 顺时针增大（气象来向）
         colors = cmap(norm(counts))
         ax.bar(angles_rad, counts, width=widths_rad, align='center',
@@ -168,15 +193,18 @@ def plot_station_rose_pair_colored(exceed_counts, sustain_counts, edges_deg, tit
 
 def add_mini_rose_colored(ax_map, lon, lat, counts, edges_deg, size_inch, norm, cmap, rlim_max=None):
     """
-    在地图上叠加“迷你玫瑰”插图：
-      - 颜色：使用统一 `norm`，实现所有站点与两类指标共用同一色标。
-      - 半径：默认自适应（该站点该图的扇区最大值），也可通过 rlim_max 统一到全局
-              （当 UNIFY_RLIM=True 时，传入全局上限）。
+    在地图上将一个迷你极坐标玫瑰以 inset 的方式叠加到指定经纬度位置。
+    实现与注意事项：
+      - 使用 inset_axes 创建一个极坐标小轴（PolarAxes），位置由 bbox_to_anchor 与 ax.transData 控制（经纬度空间）。
+      - size_inch 表示插入图像的宽高（英寸），可按站点重要性放缩。
+      - rlim_max: 若非 None 则所有小图使用相同 r 轴上限（便于大小比较），否则每图自适应。
+      - 该方法在省级范围内可视化效果良好；若地图缩放很大或处于高纬度区域，极坐标到经纬度的近似偏差需注意。
     """
     angles_center_deg = 0.5 * (edges_deg[:-1] + edges_deg[1:])
     angles_rad = np.deg2rad(angles_center_deg)
     widths_rad = np.deg2rad(np.diff(edges_deg))
 
+    # 创建极坐标 inset 轴
     iax = inset_axes(
         ax_map, width=size_inch, height=size_inch, loc='center',
         bbox_to_anchor=(lon, lat), bbox_transform=ax_map.transData,
@@ -184,7 +212,7 @@ def add_mini_rose_colored(ax_map, lon, lat, counts, edges_deg, size_inch, norm, 
     )
     iax.set_theta_zero_location('N')
     iax.set_theta_direction(-1)
-    iax.set_xticks([]); iax.set_yticks([])
+    iax.set_xticks([]); iax.set_yticks([])  # 小图不显示刻度
     # 半径上限（统一 or 自适应）
     if rlim_max is None:
         iax.set_rlim(0, max(1, int(np.max(counts))))

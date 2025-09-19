@@ -1,15 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-大风玫瑰_按台风_按站点_色标统一版.py (v4.1: 修正 cartopy 兼容性问题)
+大风玫瑰_逐台风.py 
 ------------------------------------------------------------------------------------------------
-变更：
-- [修正] 重写 plot_rose_on_map 函数以解决 'get_H_transform' 报错问题，
-  采用 fig.add_axes 创建独立的极坐标子图，以兼容新版 cartopy。
-- [新增] 对每次台风，额外输出两张总结性地图和两个总结性CSV文件。
-- [新增] 依赖 cartopy 库用于地图绘制。
-- [新增] MAP_EXTENT 和 ROSE_SCALE 参数用于控制地图外观。
-- 读取NetCDF中的站点经纬度信息。
+主要功能：
+- 针对每个台风，统计所有站点的风玫瑰图（超阈值/持续性），并输出统一色标的图和CSV。
+- 输出每个台风的总结性地图（所有站点风玫瑰叠加）。
+- 输出每个站点的独立风玫瑰图和CSV。
 """
 
 import os
@@ -28,7 +25,7 @@ from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 plt.rcParams['font.sans-serif'] = ['Heiti TC']
 plt.rcParams['axes.unicode_minus'] = False # 解决负号显示问题
 
-# ===================== 参数区（可按需修改） =====================
+# ========================== 参数区  ==========================
 NC_PATH    = r"/Users/momo/Desktop/业务相关/2025 影响台风大风/All_Typhoons_ExMaxWind.nc"
 OUTPUT_DIR = Path("/Users/momo/Desktop/业务相关/2025 影响台风大风") / "输出_风玫瑰_逐台风"
 
@@ -46,15 +43,16 @@ UNIFY_RLIM = False            # 是否统一每张玫瑰图的半径上限（Tru
 
 # ----- 新增地图参数 -----
 MAP_EXTENT = [117, 124, 27, 32]  # 地图显示范围 [lon_min, lon_max, lat_min, lat_max]
-ROSE_SCALE = 0.5                # 地图上风玫瑰图的直径(英寸)，可根据出图效果调整
+ROSE_SCALE = 0.5                 # 地图上风玫瑰图的直径(英寸)，可根据出图效果调整
 # =============================================================
 
-
 def ensure_dir(p: Path):
+    """确保目录存在"""
     p.mkdir(parents=True, exist_ok=True)
 
 
 def rle_segments(bool_arr: np.ndarray):
+    """返回布尔数组中连续True的区间（run-length encoding）"""
     if bool_arr.size == 0: return []
     b = np.array(bool_arr, dtype=bool)
     padded = np.concatenate([[False], b, [False]])
@@ -65,6 +63,7 @@ def rle_segments(bool_arr: np.ndarray):
 
 
 def _norm(s: str) -> str:
+    """标准化字符串用于列名匹配"""
     if s is None: return ""
     s = str(s).strip()
     s = re.sub(r"[ _\-　]+", "", s, flags=re.IGNORECASE)
@@ -75,6 +74,7 @@ TY_EN_KEYS = {"国外名称"}
 TY_CN_KEYS = {"中文名称"}
 
 def _pick_col(df: pd.DataFrame, candidates: set):
+    """从DataFrame中选择最匹配的列名"""
     cols = {_norm(c): c for c in df.columns}
     cand_norm = {_norm(x) for x in candidates}
     for nk, c in cols.items():
@@ -83,6 +83,7 @@ def _pick_col(df: pd.DataFrame, candidates: set):
 
 
 def load_typhoon_meta_from_excel(path: str):
+    """读取台风编号与中英文名的映射表"""
     if not path:
         print("[WARN] 未提供台风信息 Excel 路径，无法映射真实编号。")
         return {}
@@ -113,6 +114,10 @@ def load_typhoon_meta_from_excel(path: str):
 
 def compute_roses_for_one_typhoon(ws_ty: np.ndarray, wd_ty: np.ndarray, threshold: float,
                                   min_consec: int, edges_deg: np.ndarray):
+    """
+    统计单个台风所有站点的风玫瑰数据（超阈值和持续性）
+    返回：ex_bins, su_bins, ex_totals, su_totals
+    """
     n_time, n_sta = ws_ty.shape
     n_bins = len(edges_deg) - 1
     ex_bins = np.zeros((n_sta, n_bins), dtype=int)
@@ -134,6 +139,7 @@ def compute_roses_for_one_typhoon(ws_ty: np.ndarray, wd_ty: np.ndarray, threshol
 
 
 def format_pair(a: str, b: str, sep=" / "):
+    """格式化中英文台风名对"""
     a, b = (a or "").strip(), (b or "").strip()
     return f"{a}{sep}{b}" if a and b else a or b or ""
 
@@ -141,6 +147,9 @@ def format_pair(a: str, b: str, sep=" / "):
 def plot_station_rose_pair_colored(exceed_counts, sustain_counts, edges_deg,
                                    ty_code, ty_en, ty_cn, stid,
                                    out_png, cmap_name="viridis", norm=None, unify_rlim=False):
+    """
+    绘制单站点的超阈值/持续性风玫瑰对比图
+    """
     angles_center_deg = 0.5 * (edges_deg[:-1] + edges_deg[1:])
     angles_rad = np.deg2rad(angles_center_deg)
     widths_rad = np.deg2rad(np.diff(edges_deg))
@@ -173,7 +182,9 @@ def plot_station_rose_pair_colored(exceed_counts, sustain_counts, edges_deg,
 
 # ----- [修正] 函数：在地图上绘制风玫瑰 -----
 def plot_rose_on_map(ax_map, lon, lat, counts, edges_deg, norm, cmap, scale_factor=0.5):
-    """在地图投影的指定经纬度点上直接绘制风玫瑰图"""
+    """
+    在地图投影的指定经纬度点上直接绘制风玫瑰图（极坐标扇形，叠加在地理坐标上）
+    """
     if np.sum(counts) == 0: 
         return
     
@@ -224,7 +235,9 @@ def plot_rose_on_map(ax_map, lon, lat, counts, edges_deg, norm, cmap, scale_fact
 # ----- [修正] 函数：创建并保存总结性地图 -----
 def create_summary_map(stids, lons, lats, rose_data, edges_deg, norm, cmap,
                        title, out_png, scale_factor, map_extent):
-    """创建一个包含所有站点风玫瑰的总结性地图"""
+    """
+    创建一个包含所有站点风玫瑰的总结性地图，并保存为图片
+    """
     fig = plt.figure(figsize=(12, 12))
     proj = ccrs.PlateCarree()
     ax = fig.add_subplot(1, 1, 1, projection=proj)
@@ -270,14 +283,15 @@ def create_summary_map(stids, lons, lats, rose_data, edges_deg, norm, cmap,
     plt.close(fig)
 
 def main():
+    """主流程：读取数据，循环每个台风，输出风玫瑰统计、地图和CSV"""
     # —— 读 NetCDF (新增读取经纬度)
     nc = Dataset(NC_PATH)
-    ws_all = np.array(nc.variables['wind_velocity'][:, 0, :], copy=True)
-    wd_all = np.array(nc.variables['wind_direction'][:, 0, :], copy=True)
-    ty_all = np.array(nc.variables['typhoon_id_index'][:, 0, :], copy=True)
-    stids  = np.array(nc.variables['STID'][:]).astype(str)
-    lats   = np.array(nc.variables['lat'][:])   # 读取纬度
-    lons   = np.array(nc.variables['lon'][:])  # 读取经度
+    ws_all = np.array(nc.variables['wind_velocity'][:, 0, :], copy=True)    # 读取风速
+    wd_all = np.array(nc.variables['wind_direction'][:, 0, :], copy=True)   # 读取风向
+    ty_all = np.array(nc.variables['typhoon_id_index'][:, 0, :], copy=True) # 台风内部索引
+    stids  = np.array(nc.variables['STID'][:]).astype(str)                  # 读取站点ID
+    lats   = np.array(nc.variables['lat'][:])                               # 读取纬度
+    lons   = np.array(nc.variables['lon'][:])                               # 读取经度
     nc.close()
 
     # —— 载入台风映射
@@ -303,19 +317,21 @@ def main():
         ty_name_pair = format_pair(ty_cn, ty_en)
         print(f"\n--- 开始处理台风: {ty_code} ({ty_name_pair}) ---")
 
+        # 提取该台风影响时段内的所有站点数据
         mask_ty_any_station = np.any(ty_all == idx, axis=1)
         if not np.any(mask_ty_any_station):
             print(f"[INFO] 台风 {ty_code} 在所有站点均无记录，跳过。")
             continue
 
-        ws_ty = np.where(ty_all == idx, ws_all, np.nan)[mask_ty_any_station, :]
+        ws_ty = np.where(ty_all == idx, ws_all, np.nan)[mask_ty_any_station, :] 
         wd_ty = np.where(ty_all == idx, wd_all, np.nan)[mask_ty_any_station, :]
 
         # 统计所有站点的玫瑰（该台风内）
         ex_bins, su_bins, ex_totals, su_totals = compute_roses_for_one_typhoon(
             ws_ty, wd_ty, THRESHOLD, MIN_CONSEC_HOURS, EDGES_DEG
         )
-
+        
+        # 统一色标范围
         GLOBAL_VMAX_TY = int(max(ex_bins.max(), su_bins.max(), 1))
         norm_ty = mcolors.Normalize(vmin=0, vmax=GLOBAL_VMAX_TY)
         cmap_ty = plt.get_cmap(CMAP_NAME)
@@ -325,7 +341,7 @@ def main():
         ty_dir = root / ty_dir_name
         ensure_dir(ty_dir)
 
-        # 【新增】===== 1. 输出总结性 CSV 文件 =====
+        # —— 输出总结性 CSV 文件 
         bin_headers = [f'deg_{int(d)}' for d in EDGES_DEG[:-1]]
         df_ex = pd.DataFrame(ex_bins, columns=bin_headers)
         df_su = pd.DataFrame(su_bins, columns=bin_headers)
@@ -342,7 +358,7 @@ def main():
         df_su.to_csv(csv_su_path, index=False, encoding='utf-8-sig')
         print(f"[OK] 已输出总结性CSV: {csv_ex_path.name}, {csv_su_path.name}")
 
-        # 【新增】===== 2. 输出总结性地图 =====
+        # —— 输出总结性地图
         title_ex = f"台风: {ty_code} {ty_name_pair}\n超阈值大风时数 (> {THRESHOLD} m/s) 风玫瑰图"
         map_ex_path = ty_dir / f"{ty_code}_map_exceed.png"
         create_summary_map(stids, lons, lats, ex_bins, EDGES_DEG, norm_ty, cmap_ty,
@@ -354,7 +370,7 @@ def main():
                            title_su, map_su_path, ROSE_SCALE, MAP_EXTENT)
         print(f"[OK] 已输出总结性地图: {map_ex_path.name}, {map_su_path.name}")
 
-        # ===== 3. (原功能) 每站点输出独立的 CSV + 双图 =====
+        # —— 每站点输出独立的 CSV + 双图 
         out_csv_dir = ty_dir / "per_station" / "csv"
         out_fig_dir = ty_dir / "per_station" / "figs"
         ensure_dir(out_csv_dir); ensure_dir(out_fig_dir)

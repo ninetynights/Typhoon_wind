@@ -1,15 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-大风玫瑰_按台风_按站点_色标统一版.py (v4.1: 修正 cartopy 兼容性问题)
+大风玫瑰_逐台风_地形.py 
 ------------------------------------------------------------------------------------------------
-变更：
-- [修正] 重写 plot_rose_on_map 函数以解决 'get_H_transform' 报错问题，
-  采用 fig.add_axes 创建独立的极坐标子图，以兼容新版 cartopy。
-- [新增] 对每次台风，额外输出两张总结性地图和两个总结性CSV文件。
-- [新增] 依赖 cartopy 库用于地图绘制。
-- [新增] MAP_EXTENT 和 ROSE_SCALE 参数用于控制地图外观。
-- 读取NetCDF中的站点经纬度信息。
+主要功能：
+- 针对每个台风，统计所有站点的风玫瑰图（超阈值/持续性），并输出统一色标的图和CSV。
+- 输出每个台风的总结性地图（所有站点风玫瑰叠加）；增加DEM地形背景。
+- 输出每个站点的独立风玫瑰图和CSV。
 """
 
 import os
@@ -23,7 +20,6 @@ from netCDF4 import Dataset
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
-# 新增导入
 import xarray as xr
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 
@@ -51,7 +47,7 @@ UNIFY_RLIM = False            # 是否统一每张玫瑰图的半径上限（Tru
 
 # ----- 新增地图参数 -----
 MAP_EXTENT = [117, 124, 27, 32]  # 地图显示范围 [lon_min, lon_max, lat_min, lat_max]
-ROSE_SCALE = 0.5                # 地图上风玫瑰图的直径(英寸)，可根据出图效果调整
+ROSE_SCALE = 0.5                 # 地图上风玫瑰图的直径(英寸)，可根据出图效果调整
 # =============================================================
 
 

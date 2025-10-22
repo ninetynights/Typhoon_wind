@@ -21,9 +21,9 @@ plt.rcParams['font.sans-serif'] = ['Heiti TC']
 
 # ============= 参数 =============
 NC_PATH    = r"/Users/momo/Desktop/业务相关/2025 影响台风大风/All_Typhoons_ExMaxWind.nc"
-OUTPUT_DIR = Path("/Users/momo/Desktop/业务相关/2025 影响台风大风") / "输出_风玫瑰"
+OUTPUT_DIR = Path("/Users/momo/Desktop/业务相关/2025 影响台风大风") / "输出_风玫瑰_15级"
 
-THRESHOLD        = 17.3
+THRESHOLD        = 46.2
 MIN_CONSEC_HOURS = 2
 N_BINS           = 16
 EDGES_DEG        = np.linspace(0, 360, N_BINS+1)
@@ -117,7 +117,7 @@ def main():
         ws = wind_speeds[mask_any, i]
         wd = wind_dirs[mask_any, i]
         valid = np.isfinite(ws) & np.isfinite(wd)
-        gt = (ws > THRESHOLD) & valid
+        gt = (ws >= THRESHOLD) & valid
         if not np.any(gt):
             continue
         exceed_bins += rose_bin_counts(wd[gt], EDGES_DEG)
@@ -132,7 +132,7 @@ def main():
             ws = wind_speeds[mask_ty, i]
             wd = wind_dirs[mask_ty, i]
             valid = np.isfinite(ws) & np.isfinite(wd)
-            gt = (ws > THRESHOLD) & valid
+            gt = (ws >= THRESHOLD) & valid
             if not np.any(gt):
                 continue
             for s, e in rle_segments(gt):
@@ -162,12 +162,12 @@ def main():
 
     # —— 图（统一色标）
     plot_wind_rose_colored(exceed_bins, EDGES_DEG,
-                           title=f"Overall Wind Rose (Hours > {THRESHOLD} m/s)",
+                           title=f"Overall Wind Rose (Hours ≥ {THRESHOLD} m/s)",
                            out_png=out_fig / f"Overall_Exceedance_WindRose_{THRESHOLD:.1f}.png",
                            cmap_name=CMAP_NAME, annotate=ANNOTATE_BARS, norm=norm_global)
 
     plot_wind_rose_colored(sustain_bins, EDGES_DEG,
-                           title=f"Overall Wind Rose (Sustained > {THRESHOLD} m/s, ≥ {MIN_CONSEC_HOURS}h)",
+                           title=f"Overall Wind Rose (Sustained ≥ {THRESHOLD} m/s, ≥ {MIN_CONSEC_HOURS}h)",
                            out_png=out_fig / f"Overall_Sustained_WindRose_{THRESHOLD:.1f}_ge{MIN_CONSEC_HOURS}h.png",
                            cmap_name=CMAP_NAME, annotate=ANNOTATE_BARS, norm=norm_global)
 

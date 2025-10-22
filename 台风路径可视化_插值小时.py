@@ -24,7 +24,7 @@ except Exception:
 
 import matplotlib
 import matplotlib.pyplot as plt
-matplotlib.rcParams['font.sans-serif'] = ['Heiti TC', 'SimHei', 'Arial Unicode MS', 'DejaVu Sans']
+matplotlib.rcParams['font.sans-serif'] = ['Heiti TC']
 matplotlib.rcParams['axes.unicode_minus'] = False
 
 # ------------------ 路径 ------------------

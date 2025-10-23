@@ -52,9 +52,9 @@ matplotlib.rcParams['axes.unicode_minus'] = False
 
 # ------------------ 路径配置 ------------------
 BESTTRACK_DIR = "/Users/momo/Desktop/业务相关/2025 影响台风大风/热带气旋最佳路径数据集"
-EXCEL_PATH    = "/Users/momo/Desktop/业务相关/2025 影响台风大风/2010_2024_影响台风_大风.xlsx"
+EXCEL_PATH    = "/Users/momo/Desktop/业务相关/2025 影响台风大风/2010_2024_影响台风_大风_去除圆规.xlsx"
 VIS_SCRIPT    = "/Users/momo/Desktop/业务相关/2025 影响台风大风/代码/台风路径可视化_插值小时.py"  # 你的可视化脚本完整路径
-OUT_DIR       = os.path.join(os.path.dirname(EXCEL_PATH), "输出_影响段聚类_Kmeans_增加经纬度特征") # 改个新目录名
+OUT_DIR       = os.path.join(os.path.dirname(EXCEL_PATH), "输出_影响段聚类_Kmeans_增加经纬度特征_去除圆规") # 改个新目录名
 
 # Excel 列名
 ID_COL = "中央台编号"

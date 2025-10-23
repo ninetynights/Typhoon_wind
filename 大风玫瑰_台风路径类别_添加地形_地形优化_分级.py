@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-按台风路径类别分析8级以上大风风玫瑰并叠加地形.py
+按台风路径类别分析多个大风等级的风玫瑰并叠加地形.py
 ------------------------------------------------------------------------------------------------
 主要功能：
+- [新] 批处理：可一次性循环分析多个大风等级 (8级-15级)
+- [新] 增加离散风力等级分析 (例如 "仅8级") 和 累积风力等级分析 (例如 "8级及以上")
+- [新] 动态输出：为每个大风等级自动生成带等级名称的文件夹和图表标题
 - [优化] 采用非线性颜色映射(PowerNorm)和高对比度色图(YlOrRd)，增强颜色分辨度。
 - [优化] 在每个风玫瑰后增加白色光环，解决重叠问题，提升视觉分离度。
-- 全局统一色标，确保跨类别可比性。
+- 全局统一色标 (在单个风力等级内)，确保跨类别可比性。
 - 精细化风玫瑰绘制，效果美观。
 - 为每个路径类别（簇）生成CSV和叠加地形的地图。
 """
@@ -22,6 +25,9 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import xarray as xr
+import matplotlib.colors as mcolors
+from matplotlib.colors import LightSource # 确保引入 LightSource
+import scipy.ndimage as ndimage # 引入 scipy 进行高程数据平滑，效果更好
 
 # --- 配置区 ---
 
@@ -33,15 +39,13 @@ CLUSTER_MAP_CSV = r"/Users/momo/Desktop/业务相关/2025 影响台风大风/输
 NC_PATH         = r"/Users/momo/Desktop/业务相关/2025 影响台风大风/All_Typhoons_ExMaxWind.nc"
 DEM_PATH        = r"/Users/momo/Desktop/业务相关/2025 影响台风大风/地形文件/DEM_0P05_CHINA.nc"
 
-# 2. 输出目录
-OUTPUT_DIR = Path("./输出_HDBSCAN_各路径类别大风玫瑰分析_15级及以上")
+# 2. 基础输出目录 (不含风力等级)
+BASE_OUTPUT_DIR = Path("/Users/momo/Desktop/业务相关/2025 影响台风大风")
 
 # 3. 参数设置
-WIND_THRESHOLD = 46.2
 N_BINS         = 16
 EDGES_DEG      = np.linspace(0, 360, N_BINS + 1)
 MAP_EXTENT     = [117.5, 123.5, 26.5, 31.5]
-# --- 【改进3】调整基础缩放因子 ---
 ROSE_SCALE     = 0.3  # 可以尝试 0.25, 0.3, 0.35 等值
 
 # 4. 绘图样式
@@ -49,7 +53,7 @@ plt.rcParams['font.sans-serif'] = ['Heiti TC']
 plt.rcParams['axes.unicode_minus'] = False
 
 
-# --- 工具函数 ---
+# --- 工具函数 (保持不变) ---
 
 def ensure_dir(p: Path):
     p.mkdir(parents=True, exist_ok=True)
@@ -61,20 +65,67 @@ def parse_nc_mappings(nc_file):
     return index_to_id
 
 def add_topography_to_map(ax, dem_path, map_extent):
+    """
+    [改进版 v2] 
+    1. 使用 xarray.interp() 进行三次样条插值，解决马赛克问题
+    2. 使用晕渲（Hillshade）地形图，增强立体感
+    """
     try:
         ds_dem = xr.open_dataset(dem_path)
         dem_var_name = 'dhgt_gfs' if 'dhgt_gfs' in ds_dem else list(ds_dem.data_vars)[0]
         dem_data = ds_dem[dem_var_name]
-        dem_cropped = dem_data.sel(
+        
+        # 1. 裁剪原始低分辨率数据 (比地图范围稍大一点)
+        dem_cropped_lowres = dem_data.sel(
             Lon=slice(map_extent[0] - 0.5, map_extent[1] + 0.5),
             Lat=slice(map_extent[2] - 0.5, map_extent[3] + 0.5)
         )
-        lons_dem, lats_dem = dem_cropped.Lon.values, dem_cropped.Lat.values
-        levels = np.arange(0, 1501, 100)
-        ax.contourf(lons_dem, lats_dem, dem_cropped.values, levels=levels, cmap='Greys', alpha=0.6, transform=ccrs.PlateCarree(), zorder=1)
+        
+        # --- 核心改进：插值升采样 ---
+        
+        # 2. 定义一个新的、更高分辨率的网格
+        interp_factor = 10
+        orig_lons = dem_cropped_lowres.Lon.values
+        orig_lats = dem_cropped_lowres.Lat.values
+        
+        new_lons = np.linspace(orig_lons.min(), orig_lons.max(), num=len(orig_lons) * interp_factor)
+        new_lats = np.linspace(orig_lats.min(), orig_lats.max(), num=len(orig_lats) * interp_factor)
+
+        # 3. 执行插值
+        print(f"[提示] 正在对 DEM 数据进行 {interp_factor}x 插值，使其更平滑...")
+        dem_interp_highres = dem_cropped_lowres.interp(
+            Lon=new_lons, 
+            Lat=new_lats, 
+            method='cubic'
+        )
+        
+        # 4. 从插值后的高分辨率数据中获取网格和高程
+        lons_dem, lats_dem = dem_interp_highres.Lon.values, dem_interp_highres.Lat.values
+        elevation = dem_interp_highres.values
+        elevation = np.nan_to_num(elevation)
+        
+        # --- 核心改进：创建晕渲图 (与之前相同) ---
+        elevation_smoothed = ndimage.gaussian_filter(elevation, sigma=2.0)
+        ls = LightSource(azdeg=315, altdeg=45)
+        rgb = ls.shade(elevation_smoothed, 
+                       cmap=plt.get_cmap('terrain'), 
+                       vert_exag=1.5,
+                       blend_mode='soft',
+                       norm=mcolors.Normalize(vmin=0, vmax=1500)
+                      )
+        
+        # 8. 在地图上绘制晕渲图
+        ax.imshow(rgb, 
+                  origin='upper', 
+                  extent=[lons_dem.min(), lons_dem.max(), lats_dem.min(), lats_dem.max()],
+                  transform=ccrs.PlateCarree(), 
+                  zorder=1,
+                  alpha=0.75
+                 )
         ds_dem.close()
+
     except Exception as e:
-        print(f"[警告] 添加地形背景失败: {e}")
+        print(f"[警告] 添加(改进版V2 - 插值)地形背景失败: {e}")
 
 def plot_rose_on_map(ax_map, lon, lat, counts, edges_deg, norm, cmap, scale_factor=0.5):
     """在地图上绘制带光环的迷你风玫瑰图"""
@@ -86,11 +137,8 @@ def plot_rose_on_map(ax_map, lon, lat, counts, edges_deg, norm, cmap, scale_fact
     dynamic_scale = scale_factor * (0.6 + 0.4 * np.sqrt(total_hours / 50.0))
 
     # --- 【改进4】增加白色背景光环 ---
-    # 光环比玫瑰图本身稍大一点，形成一个边界
     halo_radius_deg = dynamic_scale * 1.15
-    # 用一个大的散点来模拟圆
     ax_map.scatter(lon, lat, s=(halo_radius_deg * 72)**2, color='white', alpha=0.6, zorder=8, transform=ccrs.PlateCarree())
-
 
     edges_rad = np.deg2rad(edges_deg)
     angles_rad = edges_rad[:-1]
@@ -128,23 +176,37 @@ def plot_rose_on_map(ax_map, lon, lat, counts, edges_deg, norm, cmap, scale_fact
             )
 
 
-# --- 主逻辑 (与之前版本基本一致) ---
+# --- 主逻辑 (已参数化) ---
 
-def analyze_and_plot_rose_by_cluster():
-    ensure_dir(OUTPUT_DIR)
-    csv_out_dir = OUTPUT_DIR / "csv"
-    fig_out_dir = OUTPUT_DIR / "figs"
+def analyze_and_plot_rose_by_cluster(min_threshold, max_threshold, level_name):
+    """
+    [MODIFIED] 参数化的主分析函数
+    
+    Args:
+        min_threshold (float): 最小风速阈值 (m/s) (包含)
+        max_threshold (float): 最大风速阈值 (m/s) (不包含)
+        level_name (str): 风力等级的名称 (如 "8级" 或 "8级及以上")
+    """
+    
+    # 1. [新] 根据风力等级动态创建输出目录
+    # 注意: 你提供的代码中, 路径分类是 Kmeans, 输出文件夹名也是 Kmeans, 保持一致
+    output_folder_name = f"输出_HDBSCAN_各路径类别大风玫瑰分析_{level_name}"
+    current_output_dir = BASE_OUTPUT_DIR / output_folder_name
+    ensure_dir(current_output_dir)
+    csv_out_dir = current_output_dir / "csv"
+    fig_out_dir = current_output_dir / "figs"
     ensure_dir(csv_out_dir)
     ensure_dir(fig_out_dir)
+    print(f"输出目录已设置为: {current_output_dir}")
 
-    # 1. 读取路径分类数据
+    # 2. 读取路径分类数据
     print(f"正在读取路径分类文件: {CLUSTER_MAP_CSV}")
     df_clusters = pd.read_csv(CLUSTER_MAP_CSV)
     tid_to_cluster = df_clusters.set_index('tid')['cluster_id'].to_dict()
     cluster_ids = sorted(df_clusters['cluster_id'].unique())
     print(f"识别到 {len(cluster_ids)} 个路径类别: {cluster_ids}")
 
-    # 2. 读取NetCDF数据
+    # 3. 读取NetCDF数据
     print(f"正在读取NetCDF数据: {NC_PATH}")
     nc = Dataset(NC_PATH)
     index_to_tid = parse_nc_mappings(nc)
@@ -156,11 +218,19 @@ def analyze_and_plot_rose_by_cluster():
     ty_indices = np.array(nc.variables['typhoon_id_index'][:, 0, :]).astype(int)
     nc.close()
 
-    # 3. 筛选并统计8级以上大风的风向
-    print(f"正在筛选风速 >= {WIND_THRESHOLD}m/s 的数据并统计风向...")
-    cluster_wind_dirs = {cid: {s: [] for s in stids} for cid in cluster_ids}
+    # 4. [MODIFIED] 筛选并统计指定等级大风的风向
+    if max_threshold == np.inf:
+        print(f"正在筛选风速 >= {min_threshold}m/s ({level_name}) 的数据并统计风向...")
+    else:
+        print(f"正在筛选 {min_threshold}m/s <= 风速 < {max_threshold}m/s ({level_name}) 的数据并统计风向...")
 
-    strong_wind_mask = wind_speeds >= WIND_THRESHOLD
+    cluster_wind_dirs = {cid: {stid: [] for stid in stids} for cid in cluster_ids}
+
+    # [MODIFIED] 核心筛选逻辑
+    mask_min = wind_speeds >= min_threshold
+    mask_max = wind_speeds < max_threshold
+    strong_wind_mask = mask_min & mask_max # 逻辑与
+
     t_indices, s_indices = np.where(strong_wind_mask)
 
     for t_idx, s_idx in zip(t_indices, s_indices):
@@ -177,7 +247,7 @@ def analyze_and_plot_rose_by_cluster():
         if not np.isnan(wd):
             cluster_wind_dirs[cluster_id][stids[s_idx]].append(wd)
 
-    # 4. 计算所有类别的风玫瑰数据，并找到全局最大值以统一色标
+    # 5. 计算所有类别的风玫瑰数据，并找到全局最大值以统一色标
     print("正在计算所有类别的风玫瑰数据...")
     cluster_rose_data = {}
     GLOBAL_VMAX = 1
@@ -202,25 +272,23 @@ def analyze_and_plot_rose_by_cluster():
             if current_max > GLOBAL_VMAX:
                 GLOBAL_VMAX = current_max
 
-    print(f"所有类别计算完成，用于统一色标的全局最大扇区小时数为: {GLOBAL_VMAX}")
+    print(f"[{level_name}] 级别计算完成，用于统一色标的全局最大扇区小时数为: {GLOBAL_VMAX}")
 
-    # 5. 使用统一色标生成CSV和地图
-    # --- 【改进2】使用PowerNorm进行非线性颜色映射 ---
+    # 6. 使用统一色标生成CSV和地图
     norm = mcolors.PowerNorm(gamma=0.5, vmin=0, vmax=GLOBAL_VMAX)
-    # --- 【改进1】换用高对比度色图 ---
     cmap = plt.get_cmap('YlOrRd')
 
     for cid in cluster_ids:
-        print(f"\n--- 正在为路径类别 {cid} 生成结果 ---")
+        print(f"\n--- 正在为路径类别 {cid} (风力 {level_name}) 生成结果 ---")
         if cid not in cluster_rose_data:
-            print(f"类别 {cid} 没有站点出现8级以上大风，跳过。")
+            print(f"类别 {cid} 没有站点出现 {level_name} 大风，跳过。")
             continue
 
         data = cluster_rose_data[cid]
         rose_counts_matrix = data["matrix"]
         s_indices = data["s_indices"]
 
-        # 保存CSV
+        # 保存CSV (路径已在步骤1中动态设置)
         bin_headers = [f'deg_{int(d1)}-{int(d2)}' for d1, d2 in zip(EDGES_DEG[:-1], EDGES_DEG[1:])]
         df_csv = pd.DataFrame(rose_counts_matrix, columns=bin_headers)
         df_csv.insert(0, 'STID', stids[s_indices])
@@ -261,13 +329,68 @@ def analyze_and_plot_rose_by_cluster():
         cbar = fig.colorbar(sm, ax=ax, orientation='vertical', pad=0.05, shrink=0.6)
         cbar.set_label(f"单个扇区内的大风小时数 (全局统一色标, max={GLOBAL_VMAX})", fontsize=10)
 
-        ax.set_title(f"路径类别 {cid} 的15级以上大风风玫瑰图", fontsize=16, pad=20)
+        # [新] 动态设置标题 (逻辑不变, 自动适配 "8级" 或 "8级及以上")
+        ax.set_title(f"路径类别 {cid} 的{level_name}大风风玫瑰图", fontsize=16, pad=20)
 
         fig_path = fig_out_dir / f"Cluster_{cid}_StrongWind_Rose_Map.png"
         fig.savefig(fig_path, dpi=200, bbox_inches='tight')
         print(f"已保存风玫瑰地图到: {fig_path}")
         plt.close(fig)
 
+
+# --- [MODIFIED] 主程序入口 (循环调用) ---
+
 if __name__ == "__main__":
-    analyze_and_plot_rose_by_cluster()
+    
+    # 1. 定义你需要的风力等级分箱 (level_name, min_speed, max_speed)
+    #    max_speed 是开区间 (不包含), np.inf 表示无穷大
+    WIND_BINS_TO_PROCESS = [
+        # === 原始的 "累积超越" 分析 (用于风险评估) ===
+        ("8级及以上", 17.2, np.inf),
+        ("9级及以上", 20.8, np.inf),
+        ("10级及以上", 24.5, np.inf),
+        ("11级及以上", 28.5, np.inf),
+        ("12级及以上", 32.7, np.inf),
+        ("13级及以上", 37.0, np.inf),
+        ("14级及以上", 41.5, np.inf),
+        ("15级及以上", 46.2, np.inf),
+        
+        # === 新增的 "离散区间" 分析 (用于物理机制) ===
+        # 规则: min ≤ 风速 < max
+        ("8级", 17.2, 20.8),  # 对应 17.2 ≤ 8级 ≤ 20.7
+        ("9级", 20.8, 24.5),  # 对应 20.8 ≤ 9级 ≤ 24.4
+        ("10级", 24.5, 28.5), # 对应 24.5 ≤ 10级 ≤ 28.4
+        ("11级", 28.5, 32.7), # 对应 28.5 ≤ 11级 ≤ 32.6
+        ("12级", 32.7, 37.0), # 对应 32.7 ≤ 12级 ≤ 36.9
+        ("13级", 37.0, 41.5), # 对应 37.0 ≤ 13级 ≤ 41.4
+        ("14级", 41.5, 46.2), # 对应 41.5 ≤ 14级 ≤ 46.1
+        ("15级", 46.2, 51.0), # 对应 46.2 ≤ 15级 ≤ 50.9
+        ("16级", 51.0, 56.1), # 对应 51.0 ≤ 16级 ≤ 56.0 (max设为56.1以包含56.0)
+    ]
+    
+    # 2. 循环处理每个等级
+    print(f"--- 即将开始批处理 {len(WIND_BINS_TO_PROCESS)} 个风力分箱 ---")
+    
+    # [MODIFIED] 循环并调用新函数签名
+    for level_name, min_thresh, max_thresh in WIND_BINS_TO_PROCESS:
+        print(f"\n=======================================================")
+        if max_thresh == np.inf:
+            print(f"      开始处理风力等级: {level_name} (>= {min_thresh} m/s)")
+        else:
+            print(f"      开始处理风力等级: {level_name} (>= {min_thresh} m/s, < {max_thresh} m/s)")
+        print(f"=======================================================")
+        
+        try:
+            analyze_and_plot_rose_by_cluster(
+                min_threshold=min_thresh,
+                max_threshold=max_thresh,
+                level_name=level_name
+            )
+        except Exception as e:
+            print(f"[!!! 严重错误 !!!] 处理 {level_name} 时发生失败: {e}")
+            # 你可以选择在这里 'continue' (继续下一个) 或 'break' (终止)
+            continue
+            
+        print(f"--- 风力等级: {level_name} 处理完成 ---")
+
     print("\n[--- 所有任务完成 ---]")

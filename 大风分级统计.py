@@ -6,6 +6,7 @@
 改动：
   - 输出目录：固定为 /Users/momo/Desktop/业务相关/2025 影响台风大风/输出_大风分级统计
   - 绘图：使用“不同颜色的数字”标注站点的超阈值小时数（不再使用散点）
+  - 新增功能：在终端打印“无站点超阈值”的台风列表
 
 依赖：numpy, pandas, matplotlib, cartopy, netCDF4
 """
@@ -29,8 +30,8 @@ NC_PATH    = r"/Users/momo/Desktop/业务相关/2025 影响台风大风/All_Typh
 # ======================================================
 
 # 其余参数在这里：
-OUTPUT_DIR = Path("/Users/momo/Desktop/业务相关/2025 影响台风大风") / "输出_大风分级统计"
-THRESHOLD  = 17.3
+OUTPUT_DIR = Path("/Users/momo/Desktop/业务相关/2025 影响台风大风") / "输出_大风分级统计_测试"
+THRESHOLD  = 17.2
 EXTENT     = [118, 123, 27, 32]   # 设为 None 则自适应
 TEXT_SIZE  = 8                    # 数字字号
 CMAP_NAME  = "viridis"            # 颜色映射
@@ -115,7 +116,7 @@ def draw_station_count_text_map(
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
     cbar = plt.colorbar(sm, ax=ax, shrink=0.8)
-    cbar.set_label(f"Hours with wind speed > {THRESHOLD} m/s")
+    cbar.set_label(f"Hours with wind speed >= {THRESHOLD} m/s")
 
     # 网格
     gl = ax.gridlines(draw_labels=True, linewidth=0.3, alpha=0.5, crs=ccrs.PlateCarree())
@@ -182,10 +183,19 @@ def main():
 
     # 4) 统计 + 输出
     total_counts = np.zeros(n_sta, dtype=int)
+    
+    # 【新增】用于存储无超阈值站点的台风信息
+    zero_exceed_typhoons = []
+
+    print(f"开始统计... 共 {len(items)} 个台风过程。")
+    print(f"风速阈值: {THRESHOLD} m/s")
+    print(f"输出目录: {OUTPUT_DIR}\n" + "="*50)
 
     for tid_str, ty_idx in items:
         cn_name = index_to_cn.get(str(ty_idx), "")
         en_name = index_to_en.get(str(ty_idx), "")
+
+        print(f"--- 正在处理: {tid_str} {cn_name} ({en_name}) ---")
 
         counts = np.zeros(n_sta, dtype=int)
         for i in range(n_sta):
@@ -195,7 +205,13 @@ def main():
                 continue
             ws = wind_speeds[mask, i]
             # 计数大于阈值的小时数
-            counts[i] = int(np.sum(ws > THRESHOLD))
+            counts[i] = int(np.sum(ws >= THRESHOLD))
+
+        # 【新增】检查该台风是否有站点超阈值
+        if np.sum(counts) == 0:
+            msg = f"[INFO] 台风 {tid_str} ({cn_name} / {en_name}) 影响期间，无站点超过 {THRESHOLD} m/s"
+            print(msg)
+            zero_exceed_typhoons.append(f"  - {tid_str} ({cn_name} / {en_name})")
 
         # CSV（单台风）
         df = pd.DataFrame({
@@ -209,7 +225,7 @@ def main():
         df.to_csv(out_csv / fname, index=False, encoding="utf-8")
 
         # 图（单台风，彩色数字）
-        title = f"TID {tid_str} - {cn_name} ({en_name})\nHours with WS > {THRESHOLD} m/s"
+        title = f"TID {tid_str} - {cn_name} ({en_name})\nHours with WS >= {THRESHOLD} m/s"
         png = out_fig / f"Exceed_{THRESHOLD:.1f}_{sanitize_filename(tid_str)}.png"
         draw_station_count_text_map(
             lons, lats, counts, stids, title, str(png),
@@ -228,15 +244,26 @@ def main():
     })
     df_total.to_csv(out_csv / f"AllTyphoons_Exceed_{THRESHOLD:.1f}.csv", index=False, encoding="utf-8")
 
-    title_total = f"All Typhoons\nTotal Hours with WS > {THRESHOLD} m/s"
+    title_total = f"All Typhoons\nTotal Hours with WS >= {THRESHOLD} m/s"
     png_total = out_fig / f"AllTyphoons_Exceed_{THRESHOLD:.1f}.png"
     draw_station_count_text_map(
         lons, lats, total_counts, stids, title_total, str(png_total),
         extent=EXTENT, text_size=TEXT_SIZE, cmap_name=CMAP_NAME, show_zero=SHOW_ZERO
     )
 
+    # 【修改】汇总打印
+    print("\n" + "="*50)
+    print("           *** 统计完毕 ***")
     print(f"[OK] 单台风 CSV/图 已输出至: {OUTPUT_DIR}")
     print(f"[OK] 总体 CSV/图 已输出至: {OUTPUT_DIR}")
+    
+    if zero_exceed_typhoons:
+        print(f"\n[SUMMARY] 以下 {len(zero_exceed_typhoons)} 个台风影响期间，无站点超过 {THRESHOLD} m/s 阈值：")
+        for msg in zero_exceed_typhoons:
+            print(msg)
+    else:
+        print(f"\n[SUMMARY] 所有台风影响期间，均有站点超过 {THRESHOLD} m/s。")
+    print("="*50 + "\n")
 
 
 if __name__ == "__main__":

@@ -7,6 +7,9 @@
 - 专门使用 HDBSCAN 算法对台风“影响时段”路径进行聚类。
 - 聚类特征向量使用“重采样后的绝对坐标序列”，同时考虑地理位置和路径形状。
 - 复用《台风路径可视化_插值小时.py》中的数据读取与插值函数。
+- 调整Min samples参数为2。
+- 打印出未被聚类（噪声/未通过质控）的台风名称。
+- 计算并打印 DBCV (密度聚类有效性) 指标。
 
 依赖:
   pip install scikit-learn hdbscan umap-learn pandas numpy matplotlib cartopy
@@ -56,16 +59,18 @@ except Exception:
 # ------------------ CONFIG: 在此修改所有配置 ------------------
 CONFIG = {
     # --- 1. 路径配置 ---
-    "EXCEL_PATH": "/Users/momo/Desktop/业务相关/2025 影响台风大风/2010_2024_影响台风_大风.xlsx",
+    "EXCEL_PATH": "/Users/momo/Desktop/业务相关/2025 影响台风大风/2010_2024_影响台风_大风_去除圆规.xlsx",
     "BESTTRACK_DIR": "/Users/momo/Desktop/业务相关/2025 影响台风大风/热带气旋最佳路径数据集",
     "VIS_SCRIPT_PATH": "/Users/momo/Desktop/业务相关/2025 影响台风大风/代码/台风路径可视化_插值小时.py",
-    "OUT_DIR": "/Users/momo/Desktop/业务相关/2025 影响台风大风/输出_影响段聚类_HDBSCAN_优化版",
+    "OUT_DIR": "/Users/momo/Desktop/业务相关/2025 影响台风大风/输出_影响段聚类_HDBSCAN_优化版_去除圆规_v3",
 
     # --- 2. Excel 列名 ---
     "ID_COL": "中央台编号",
     "ST_COL": "大风开始时间",
     "EN_COL": "大风结束时间",
-    
+    "CN_NAME_COL": "中文名称",   # <-- [新增] 请确保 Excel 中有此列名
+    "EN_NAME_COL": "国外名称",   # <-- [新增] 请确保 Excel 中有此列名
+
     # --- 3. 地图范围 [lon_min, lon_max, lat_min, lat_max] ---
     "MAP_EXTENT": [105, 140, 15, 45],
 
@@ -79,7 +84,7 @@ CONFIG = {
     "UMAP_NEIGH": 15,             # UMAP: 邻域点数 (值越小越关注局部结构)
     "UMAP_MIN_DIST": 0.1,         # UMAP: 点之间的最小距离 (值越小簇越紧凑)
     "HDB_MIN_CLUSTER_SIZE": 5,    # HDBSCAN: 形成一个簇所需的最小路径数
-    "HDB_MIN_SAMPLES": 3,         # HDBSCAN: 成为核心点的所需邻居数 (值越小越能容忍噪声)
+    "HDB_MIN_SAMPLES": 2,         # HDBSCAN: 成为核心点的所需邻居数 (值越小越能容忍噪声)
     "RANDOM_STATE": 42            # 随机种子，确保结果可复现
 }
 # ------------------ CONFIG END ------------------
@@ -199,12 +204,49 @@ def _fallback_hourly_interp(points: List[BTPoint]) -> List[BTPoint]:
         cur += pd.Timedelta(hours=1)
     return out
 
-def _fallback_read_excel_windows(path: str, id_col: str, st_col: str, en_col: str) -> pd.DataFrame:
-    df = pd.read_excel(path)
-    df = df[[id_col, st_col, en_col]].copy()
+def _fallback_read_excel_windows(path: str, id_col: str, st_col: str, en_col: str, cn_name_col: str, en_name_col: str) -> pd.DataFrame:
+    """
+    [修改] 健壮地读取 Excel，包含可选的名称列。
+    """
+    try:
+        df = pd.read_excel(path)
+    except FileNotFoundError:
+        print(f"错误: Excel 文件未找到: {path}", file=sys.stderr)
+        sys.exit(1)
+        
+    # 检查基本列是否存在
+    required_cols = [id_col, st_col, en_col]
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        print(f"错误: Excel 文件缺少必要列: {missing_cols}", file=sys.stderr)
+        sys.exit(1)
+        
+    cols_to_read = required_cols
+    
+    # 检查并添加可选的名称列
+    if cn_name_col in df.columns:
+        cols_to_read.append(cn_name_col)
+    else:
+        print(f"警告: Excel 中未找到中文名列 '{cn_name_col}'，将使用 'N/A' 填充。")
+        df[cn_name_col] = "N/A"
+        
+    if en_name_col in df.columns:
+        cols_to_read.append(en_name_col)
+    else:
+        print(f"警告: Excel 中未找到英文名列 '{en_name_col}'，将使用 'N/A' 填充。")
+        df[en_name_col] = "N/A"
+        
+    df = df[cols_to_read].copy()
+    
     df[id_col] = df[id_col].astype(str).str.strip().str.zfill(4)
-    df[st_col] = pd.to_datetime(df[st_col]); df[en_col] = pd.to_datetime(df[en_col])
-    df = df.dropna().sort_values([id_col, st_col]).reset_index(drop=True)
+    df[st_col] = pd.to_datetime(df[st_col])
+    df[en_col] = pd.to_datetime(df[en_col])
+    
+    # 填充可能存在的空名称
+    df[cn_name_col] = df[cn_name_col].fillna("N/A")
+    df[en_name_col] = df[en_name_col].fillna("N/A")
+    
+    df = df.dropna(subset=[id_col, st_col, en_col]).sort_values([id_col, st_col]).reset_index(drop=True)
     return df
 
 # ------------------ 绑定函数（优先使用可视化脚本） ------------------
@@ -228,6 +270,8 @@ class ImpactSeg:
     start: pd.Timestamp
     end: pd.Timestamp
     pts: List[BTPoint]  # 逐小时
+    cn_name: str        # <-- [新增]
+    en_name: str        # <-- [新增]
 
 def extract_impact_segment(hourly_pts: List[BTPoint], st: pd.Timestamp, en: pd.Timestamp) -> List[BTPoint]:
     return [p for p in hourly_pts if st <= p.t <= en]
@@ -311,6 +355,9 @@ def vectorize_segments(segments: List[ImpactSeg], resample_N: int, min_points: i
 
 def run_hdbscan(X: np.ndarray, use_umap=True, umap_neigh=20, umap_min_dist=0.1,
                 min_cluster_size=10, min_samples=7, random_state=42):
+    """
+    [修改] 返回值增加了 dbcv_score_val
+    """
     if not HAS_HDB:
         raise SystemExit("未安装 hdbscan，请先 pip install hdbscan")
         
@@ -334,21 +381,29 @@ def run_hdbscan(X: np.ndarray, use_umap=True, umap_neigh=20, umap_min_dist=0.1,
                                 min_samples=min_samples,
                                 metric='euclidean', 
                                 prediction_data=True, # 允许预测新数据
-                                gen_min_span_tree=True) # 允许绘制树状图
+                                gen_min_span_tree=True) # <-- 必须为 True 才能计算 DBCV
     
     labels = clusterer.fit_predict(Z)
     
-    # 计算去噪后的轮廓系数
+    # --- 计算轮廓系数 (在 UMAP 降维后的空间 Z) ---
     mask = labels >= 0
-    score = np.nan
+    silhouette_score_val = np.nan
     if mask.sum() > 0 and len(np.unique(labels[mask])) >= 2:
         try:
-            score = float(silhouette_score(Z[mask], labels[mask]))
+            silhouette_score_val = float(silhouette_score(Z[mask], labels[mask]))
         except Exception as e:
             print(f"轮廓系数计算失败: {e}")
-            score = np.nan
-    
-    return labels, clusterer, reducer, score
+            
+    # --- [新增] 计算 DBCV (聚类稳定性) ---
+    # HDBSCAN 库内置了 DBCV，称为 "relative_validity_"
+    # 它是在 gen_min_span_tree=True 时自动计算的
+    dbcv_score_val = np.nan
+    try:
+        dbcv_score_val = clusterer.relative_validity_
+    except Exception as e:
+        print(f"DBCV (relative_validity_) 获取失败: {e}")
+            
+    return labels, clusterer, reducer, silhouette_score_val, dbcv_score_val
 
 # ------------------ 成图与输出 ------------------
 CLUSTER_COLORS = ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd","#8c564b","#e377c2","#7f7f7f", "#bcbd22", "#17becf"]
@@ -383,9 +438,14 @@ def plot_clusters(segments: List[ImpactSeg], labels_map: Dict[int,int], out_png:
     
     # 创建图例
     handles = []
-    k_eff = len(counts) - 1 if -1 in counts else len(counts)
-    for i in range(k_eff):
-         handles.append(plt.Line2D([0],[0], color=CLUSTER_COLORS[i % len(CLUSTER_COLORS)], lw=2, label=f'簇 {i} (N={counts.get(i, 0)})'))
+    
+    # 确保簇ID从0开始连续
+    unique_clusters = sorted([c for c in counts if c >= 0])
+    k_eff = len(unique_clusters)
+    cluster_map = {old_id: new_id for new_id, old_id in enumerate(unique_clusters)}
+
+    for old_id, new_id in cluster_map.items():
+         handles.append(plt.Line2D([0],[0], color=CLUSTER_COLORS[new_id % len(CLUSTER_COLORS)], lw=2, label=f'簇 {new_id} (N={counts.get(old_id, 0)})'))
     if -1 in counts:
          handles.append(plt.Line2D([0],[0], color="#cccccc", lw=1, label=f'噪声/未参与 (N={counts[-1]})'))
     ax.legend(handles=handles, title="聚类结果", loc="lower left", fontsize=9)
@@ -404,24 +464,34 @@ def main():
     cfg = CONFIG
     os.makedirs(cfg["OUT_DIR"], exist_ok=True)
     
-    # 绑定可视化脚本函数
+    # --- [修改] 绑定函数 ---
+    # 定义一个带所有参数的 fallback loader
+    fallback_loader = lambda p: _fallback_read_excel_windows(p, 
+                                                             cfg["ID_COL"], 
+                                                             cfg["ST_COL"], 
+                                                             cfg["EN_COL"], 
+                                                             cfg["CN_NAME_COL"], 
+                                                             cfg["EN_NAME_COL"])
+    
     print(f'加载可视化脚本函数从: {cfg["VIS_SCRIPT_PATH"]} ...')
     try:
         VIS = load_vis_module(cfg["VIS_SCRIPT_PATH"])
         iter_needed_segments = getattr(VIS, 'iter_needed_segments', _fallback_iter_needed_segments)
         hourly_interp        = getattr(VIS, 'hourly_interp',        _fallback_hourly_interp)
-        read_excel_windows   = getattr(VIS, 'read_excel_windows',   lambda p: _fallback_read_excel_windows(p, cfg["ID_COL"], cfg["ST_COL"], cfg["EN_COL"]))
+        
+        # 始终使用 fallback loader 来确保能读取名称列
+        print("...使用内置 fallback 'read_excel_windows' 以确保读取名称列。")
+        read_excel_windows = fallback_loader
         print("...加载成功。")
+        
     except Exception as e:
         print(f"警告：无法从 {cfg['VIS_SCRIPT_PATH']} 加载函数 ({e})，将使用内置的兜底实现。")
         iter_needed_segments = _fallback_iter_needed_segments
         hourly_interp        = _fallback_hourly_interp
-        read_excel_windows   = lambda p: _fallback_read_excel_windows(p, cfg["ID_COL"], cfg["ST_COL"], cfg["EN_COL"])
+        read_excel_windows   = fallback_loader # 使用新的 fallback
 
     print(f'读取 Excel: {cfg["EXCEL_PATH"]} ...')
     dfx = read_excel_windows(cfg["EXCEL_PATH"])
-    dfx = dfx[[cfg["ID_COL"], cfg["ST_COL"], cfg["EN_COL"]]].copy()
-    dfx[cfg["ID_COL"]] = dfx[cfg["ID_COL"]].astype(str).str.zfill(4)
     target_tids: Set[str] = set(dfx[cfg["ID_COL"]])
 
     print(f'从 {cfg["BESTTRACK_DIR"]} 提取轨迹...')
@@ -431,16 +501,29 @@ def main():
     print('逐小时插值...')
     hourly: Dict[str, List[BTPoint]] = {tid: hourly_interp(pts) if pts else [] for tid, pts in raw_tracks.items()}
 
-    # 构建影响段样本
+    # --- [修改] 构建影响段样本 (包含名称) ---
     print('构建影响段样本...')
     segments: List[ImpactSeg] = []
     for i, row in dfx.iterrows():
-        tid = str(row[cfg["ID_COL"]]).zfill(4)
+        tid = str(row[cfg["ID_COL"]])
         st  = pd.to_datetime(row[cfg["ST_COL"]])
         en  = pd.to_datetime(row[cfg["EN_COL"]])
+        
+        # 获取名称 (fallback 已处理空值和缺列)
+        cn_name = str(row.get(cfg["CN_NAME_COL"], "N/A"))
+        en_name = str(row.get(cfg["EN_NAME_COL"], "N/A"))
+        
         pts_all = hourly.get(tid, [])
         pts_win = extract_impact_segment(pts_all, st, en) if pts_all else []
-        segments.append(ImpactSeg(idx=int(i), tid=tid, start=st, end=en, pts=pts_win))
+        segments.append(ImpactSeg(
+            idx=int(i), 
+            tid=tid, 
+            start=st, 
+            end=en, 
+            pts=pts_win,
+            cn_name=cn_name, # <-- [新增]
+            en_name=en_name  # <-- [新增]
+        ))
 
     # 体检报告
     rows = []
@@ -449,7 +532,12 @@ def main():
         n = len(coords); arc = seg_arclength(coords) if n>=2 else 0.0
         participate = (n >= cfg["MIN_POINTS"] and arc >= cfg["MIN_ARCLEN_KM"])
         rows.append({
-            'idx': seg.idx, 'tid': seg.tid, 'start': seg.start, 'end': seg.end,
+            'idx': seg.idx, 
+            'tid': seg.tid,
+            'cn_name': seg.cn_name, # <-- [新增]
+            'en_name': seg.en_name, # <-- [新增]
+            'start': seg.start, 
+            'end': seg.end,
             'found_in_lib': bool(hourly.get(seg.tid)),
             'win_points': n,
             'win_arclength_km': round(arc, 1),
@@ -470,15 +558,15 @@ def main():
     if X.shape[0] < cfg["HDB_MIN_CLUSTER_SIZE"]:
         print(f'样本不足 (少于 min_cluster_size={cfg["HDB_MIN_CLUSTER_SIZE"]})，跳过聚类。')
         map_path = os.path.join(cfg["OUT_DIR"], '影响段_簇映射.csv')
-        pd.DataFrame(columns=['idx','tid','start','end','cluster_id']).to_csv(map_path, index=False, encoding='utf-8-sig')
+        pd.DataFrame(columns=['idx','tid','cn_name','en_name','start','end','cluster_id']).to_csv(map_path, index=False, encoding='utf-8-sig')
         print('→ 簇映射：', map_path)
         # 即使不聚类，也画一张图
         png_path = os.path.join(cfg["OUT_DIR"], '影响段_路径簇_(样本不足).png')
         plot_clusters(segments, {}, png_path, extent=cfg["MAP_EXTENT"], title=f'大风影响段路径 (样本不足)')
         return
 
-    # --- 运行 HDBSCAN ---
-    labels, model, reducer, s = run_hdbscan(X,
+    # --- [修改] 运行 HDBSCAN (接收 dbcv_score) ---
+    labels, model, reducer, s_score, dbcv_score = run_hdbscan(X,
         use_umap=cfg["USE_UMAP"], 
         umap_neigh=cfg["UMAP_NEIGH"], 
         umap_min_dist=cfg["UMAP_MIN_DIST"],
@@ -488,20 +576,54 @@ def main():
     
     k_eff = int(len(np.unique(labels[labels>=0]))) if (labels.size>0) else 0
     noise_ratio = float((labels<0).sum()/labels.size)
-    print(f"HDBSCAN：簇数(不含噪声)={k_eff}，轮廓(去噪)={s:.3f}，噪声占比={noise_ratio:.2%}")
+    
+    # --- [修改] 打印所有分数 ---
+    print(f"HDBSCAN：簇数(不含噪声)={k_eff}，轮廓(去噪)={s_score:.3f}，DBCV(稳定性)={dbcv_score:.3f}，噪声占比={noise_ratio:.2%}")
 
-    # 回填映射
+    # --- 回填映射 & 打印噪声台风 ---
     idx2cid = {keep_idx[i]: int(labels[i]) for i in range(len(labels))}
+
+    print("\n--- 未进入有效聚类的台风 (唯一ID) ---")
+    noise_typhoons = {} # 存储 (tid -> (cn_name, en_name))
+    not_in_cluster_count = 0
+    
+    for i, seg in enumerate(segments):
+        cluster_id = idx2cid.get(i, -1) # 'i' 是 segments 列表的索引
+        
+        if cluster_id == -1:
+            not_in_cluster_count += 1
+            if seg.tid not in noise_typhoons:
+                noise_typhoons[seg.tid] = (seg.cn_name, seg.en_name)
+    
+    if not noise_typhoons:
+        print("  所有台风均已成功聚类。")
+    else:
+        for tid, (cn, en) in noise_typhoons.items():
+            print(f"  - 编号: {tid}, 中文名: {cn}, 英文名: {en}")
+        print(f"\n  (总计 {not_in_cluster_count} 个路径段被标记为噪声或未通过质控，")
+        print(f"   涉及 {len(noise_typhoons)} 个唯一台风编号。)")
+    print("------------------------------------\n")
+
+    # --- [修改] rows2 包含名称，用于保存CSV ---
     rows2 = [{
-        'idx': seg.idx, 'tid': seg.tid, 'start': seg.start, 'end': seg.end,
+        'idx': seg.idx, 
+        'tid': seg.tid, 
+        'cn_name': seg.cn_name,
+        'en_name': seg.en_name,
+        'start': seg.start, 
+        'end': seg.end,
         'cluster_id': idx2cid.get(i, -1)
     } for i, seg in enumerate(segments)]
+    
     map_path = os.path.join(cfg["OUT_DIR"], '影响段_簇映射.csv')
     pd.DataFrame(rows2).to_csv(map_path, index=False, encoding='utf-8-sig')
     print('→ 簇映射：', map_path)
 
-    # 成图
-    title = f'HDBSCAN 聚类 (k={k_eff}, 噪声={noise_ratio:.1%})\n(特征: 绝对坐标, min_size={cfg["HDB_MIN_CLUSTER_SIZE"]}, min_samples={cfg["HDB_MIN_SAMPLES"]})'
+    # --- [修改] 成图 (标题包含分数) ---
+    title = (
+        f'HDBSCAN (k={k_eff}, 噪声={noise_ratio:.1%}, 轮廓={s_score:.3f}, DBCV={dbcv_score:.3f})\n'
+        f'(min_size={cfg["HDB_MIN_CLUSTER_SIZE"]}, min_samples={cfg["HDB_MIN_SAMPLES"]})'
+    )
     png_path = os.path.join(cfg["OUT_DIR"], '影响段_路径簇_HDBSCAN.png')
     plot_clusters(segments, idx2cid, png_path, extent=cfg["MAP_EXTENT"], title=title)
 

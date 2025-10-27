@@ -312,7 +312,7 @@ def analyze_and_plot_rose_by_cluster(min_threshold, max_threshold, level_name):
         provinces = cfeature.NaturalEarthFeature(
             category='cultural', name='admin_1_states_provinces_lines',
             scale='10m', facecolor='none')
-        ax.add_feature(provinces, edgecolor='gray', linestyle='--', linewidth=0.6, zorder=5)
+        ax.add_feature(provinces, edgecolor='black', linestyle='--', linewidth=0.6, zorder=5)
 
         gl = ax.gridlines(draw_labels=True, linewidth=0.5, color='gray', alpha=0.5, linestyle='--')
         gl.top_labels = False; gl.right_labels = False

@@ -28,6 +28,14 @@ import xarray as xr
 import matplotlib.colors as mcolors
 from matplotlib.colors import LightSource # 确保引入 LightSource
 import scipy.ndimage as ndimage # 引入 scipy 进行高程数据平滑，效果更好
+import cartopy.io.srtm as srtm  # 确保这个被导入
+import xarray as xr
+import numpy as np
+import scipy.ndimage as ndimage
+from matplotlib.colors import LightSource
+import matplotlib.colors as mcolors
+import cartopy.crs as ccrs
+# ... (您其他的 import)
 
 # --- 配置区 ---
 
@@ -40,7 +48,7 @@ NC_PATH         = r"/Users/momo/Desktop/业务相关/2025 影响台风大风/All
 DEM_PATH        = r"/Users/momo/Desktop/业务相关/2025 影响台风大风/地形文件/DEM_0P05_CHINA.nc"
 
 # 2. 基础输出目录 (不含风力等级)
-BASE_OUTPUT_DIR = Path("/Users/momo/Desktop/业务相关/2025 影响台风大风")
+BASE_OUTPUT_DIR = Path("/Users/momo/Desktop/业务相关/2025 影响台风大风/临时_修改优化版")
 
 # 3. 参数设置
 N_BINS         = 16
@@ -66,66 +74,56 @@ def parse_nc_mappings(nc_file):
 
 def add_topography_to_map(ax, dem_path, map_extent):
     """
-    [改进版 v2] 
-    1. 使用 xarray.interp() 进行三次样条插值，解决马赛克问题
-    2. 使用晕渲（Hillshade）地形图，增强立体感
+    [已按 Fig_terrain.py 的设置修改]
+    在地图上添加地形背景。
+    - 使用 'HGT_M' 变量
+    - 使用 levels = np.arange(0, 1200, 10)
+    - 增加 extend='both'
+    - 保留 alpha=0.6 使其作为背景
     """
     try:
         ds_dem = xr.open_dataset(dem_path)
-        dem_var_name = 'dhgt_gfs' if 'dhgt_gfs' in ds_dem else list(ds_dem.data_vars)[0]
-        dem_data = ds_dem[dem_var_name]
         
-        # 1. 裁剪原始低分辨率数据 (比地图范围稍大一点)
-        dem_cropped_lowres = dem_data.sel(
+        # --- 修改 1: 明确使用 'HGT_M' 变量 (来自 Fig_terrain.py) ---
+        # 移除了原有的 dem_var_name 判断逻辑
+        if 'HGT_M' not in ds_dem:
+            print(f"[警告] 在 {dem_path} 中未找到 'HGT_M' 变量。")
+            # 作为后备，使用文件中的第一个变量
+            dem_var_name = list(ds_dem.data_vars)[0]
+            print(f"[警告] 将回退使用变量: {dem_var_name}")
+            dem_data = ds_dem[dem_var_name]
+        else:
+            dem_data = ds_dem['HGT_M']
+        # ----------------------------------------------------
+
+        dem_cropped = dem_data.sel(
             Lon=slice(map_extent[0] - 0.5, map_extent[1] + 0.5),
             Lat=slice(map_extent[2] - 0.5, map_extent[3] + 0.5)
         )
+        lons_dem, lats_dem = dem_cropped.Lon.values, dem_cropped.Lat.values
         
-        # --- 核心改进：插值升采样 ---
-        
-        # 2. 定义一个新的、更高分辨率的网格
-        interp_factor = 10
-        orig_lons = dem_cropped_lowres.Lon.values
-        orig_lats = dem_cropped_lowres.Lat.values
-        
-        new_lons = np.linspace(orig_lons.min(), orig_lons.max(), num=len(orig_lons) * interp_factor)
-        new_lats = np.linspace(orig_lats.min(), orig_lats.max(), num=len(orig_lats) * interp_factor)
+        # --- 修改 2: 采用 Fig_terrain.py 的 levels ---
+        levels = np.arange(0, 1200, 10)
+        # -------------------------------------------
+        # --- 新增：高斯平滑 ---
+        # 对裁剪后的地形数据应用高斯滤波，使其平滑
+        # sigma=1.0 是一个平滑强度的参数，您可以尝试 0.8, 1.0, 1.5 来找到最佳效果
+        dem_smoothed = ndimage.gaussian_filter(dem_cropped.values, sigma=1.5)
+        # ------------------------
 
-        # 3. 执行插值
-        print(f"[提示] 正在对 DEM 数据进行 {interp_factor}x 插值，使其更平滑...")
-        dem_interp_highres = dem_cropped_lowres.interp(
-            Lon=new_lons, 
-            Lat=new_lats, 
-            method='cubic'
-        )
+        # --- 修改 3: 增加 extend='both' (来自 Fig_terrain.py), 并保留 alpha=0.6 ---
+        ax.contourf(lons_dem, lats_dem, dem_smoothed, dem_cropped.values, 
+                    levels=levels, 
+                    cmap='terrain', 
+                    extend='both',  # 新增
+                    alpha=0.6,      # 保留 (用于背景透明度)
+                    transform=ccrs.PlateCarree(), 
+                    zorder=1)
+        # -----------------------------------------------------------------
         
-        # 4. 从插值后的高分辨率数据中获取网格和高程
-        lons_dem, lats_dem = dem_interp_highres.Lon.values, dem_interp_highres.Lat.values
-        elevation = dem_interp_highres.values
-        elevation = np.nan_to_num(elevation)
-        
-        # --- 核心改进：创建晕渲图 (与之前相同) ---
-        elevation_smoothed = ndimage.gaussian_filter(elevation, sigma=2.0)
-        ls = LightSource(azdeg=315, altdeg=45)
-        rgb = ls.shade(elevation_smoothed, 
-                       cmap=plt.get_cmap('terrain'), 
-                       vert_exag=1.5,
-                       blend_mode='soft',
-                       norm=mcolors.Normalize(vmin=0, vmax=1500)
-                      )
-        
-        # 8. 在地图上绘制晕渲图
-        ax.imshow(rgb, 
-                  origin='upper', 
-                  extent=[lons_dem.min(), lons_dem.max(), lats_dem.min(), lats_dem.max()],
-                  transform=ccrs.PlateCarree(), 
-                  zorder=1,
-                  alpha=0.75
-                 )
         ds_dem.close()
-
     except Exception as e:
-        print(f"[警告] 添加(改进版V2 - 插值)地形背景失败: {e}")
+        print(f"[警告] 添加地形背景失败: {e}")
 
 def plot_rose_on_map(ax_map, lon, lat, counts, edges_deg, norm, cmap, scale_factor=0.5):
     """在地图上绘制带光环的迷你风玫瑰图"""

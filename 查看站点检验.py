@@ -8,8 +8,8 @@ import re
 plt.rcParams['font.sans-serif'] = ['Heiti TC']
 
 # 用户输入设置
-target_typhoon_id = '1307'
-target_station_id = '58663'
+target_typhoon_id = '2421'
+target_station_id = '58666'
 nc_path = '/Users/momo/Desktop/业务相关/2025 影响台风大风/All_Typhoons_ExMaxWind.nc'
 
 # 打开 NetCDF 文件

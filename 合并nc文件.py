@@ -118,9 +118,9 @@ if __name__ == "__main__":
     
     # 输入文件
     path_national = "/Users/momo/Desktop/业务相关/2025 影响台风大风/All_Typhoons_ExMaxWind.nc"
-    path_township = "/Users/momo/Desktop/业务相关/2025 影响台风大风/New_Stations_Typhoons_ExMaxWind.nc"
+    path_township = "/Users/momo/Desktop/业务相关/2025 影响台风大风/Representative_Stations_Typhoons_ExMaxWind.nc"
     
     # 输出文件
-    path_output = "/Users/momo/Desktop/业务相关/2025 影响台风大风/combine_stations_ExMaxWind.nc"
+    path_output = "/Users/momo/Desktop/业务相关/2025 影响台风大风/Combine_Stations_ExMaxWind.nc"
     
     combine_authoritative_nc_files(path_national, path_township, path_output)

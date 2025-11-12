@@ -62,6 +62,6 @@ def check_station_name_encoding(file_path):
 # --- 脚本主程序入口 ---
 if __name__ == "__main__":
     # *** 只需要乡镇站文件的路径 ***
-    path_township = "/Users/momo/Desktop/业务相关/2025 影响台风大风/New_Stations_Typhoons_ExMaxWind.nc"
+    path_township = "/Users/momo/Desktop/业务相关/2025 影响台风大风/Representative_Stations_Typhoons_ExMaxWind.nc"
     
     check_station_name_encoding(path_township)

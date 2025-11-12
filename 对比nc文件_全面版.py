@@ -189,7 +189,7 @@ if __name__ == "__main__":
     # 国家站站点
     path_national = "/Users/momo/Desktop/业务相关/2025 影响台风大风/All_Typhoons_ExMaxWind.nc"
     # 乡镇站点
-    path_township = "/Users/momo/Desktop/业务相关/2025 影响台风大风/New_Stations_Typhoons_ExMaxWind.nc"
+    path_township = "/Users/momo/Desktop/业务相关/2025 影响台风大风/Representative_Stations_Typhoons_ExMaxWind.nc"
     
     # *** 新增：指定一个输出目录来存放 CSV 报告 ***
     output_report_dir = "/Users/momo/Desktop/业务相关/2025 影响台风大风/对比报告"

@@ -1,3 +1,30 @@
+"""
+极大风累积分布.py — 台风期间站点极大风速统计与可视化
+
+总体目的：
+- 对多次台风过程中每个观测站的极大风速进行统计与可视化，帮助识别在台风影响下风速较大的站点和空间分布特征。
+- 提供单台风级别的风场图（平均风速/方向 与 极大风速/对应风向）以及全部台风的出现次数汇总与地图展示。
+
+主要功能：
+- 逐台风读取 NetCDF 中风速、风向与台风内部索引（id_to_index / index_to_cn / index_to_en 等），
+  计算并绘制：
+    * 每站点在该台风影响期的平均风速与平均风向（并保存地图）；
+    * 每站点在该台风影响期的最大风速与对应风向（并保存地图）。
+- 统计所有台风中每个站点出现“极大风速最大站”的次数，保存为 CSV 并绘制计数分布地图。
+- 对缺测值做基本容错，输出过程信息并记录保存路径。
+
+输入（在脚本中配置）：
+- nc_path: 含有变量 id_to_index、index_to_cn、index_to_en、STID、lat、lon、height、wind_velocity、wind_direction、typhoon_id_index 的 NetCDF 文件路径。
+- typhoon_ids: 要处理的台风外部编号列表（脚本底部配置，可修改）。
+
+输出（保存到脚本中指定的 output_dir）：
+- 每台风的平均风场图：Typhoon_{id}_Average_Wind.png
+- 每台风的极大风速图：Typhoon_{id}_Max_Wind.png
+- 全体台风汇总站点计数 CSV：max_wind_count.csv
+- 全体台风计数地图：Max_Wind_Count_Map.png
+
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs

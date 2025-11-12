@@ -187,9 +187,9 @@ def compare_typhoon_nc_files(file_path_national, file_path_township, output_dir)
 if __name__ == "__main__":
     # *** 请根据你的实际路径修改这里 ***
     # 国家站站点
-    path_national = "/Users/momo/Desktop/业务相关/2025 影响台风大风/All_Typhoons_ExMaxWind.nc"
+    path_national = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/All_Typhoons_ExMaxWind.nc"
     # 乡镇站点
-    path_township = "/Users/momo/Desktop/业务相关/2025 影响台风大风/Representative_Stations_Typhoons_ExMaxWind.nc"
+    path_township = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/Representative_Stations_Typhoons_ExMaxWind.nc"
     
     # *** 新增：指定一个输出目录来存放 CSV 报告 ***
     output_report_dir = "/Users/momo/Desktop/业务相关/2025 影响台风大风/对比报告"

@@ -164,7 +164,7 @@ def plot_station_quality_map_categorized(nc_file, csv_quality_report, output_png
 if __name__ == "__main__":
     
     # --- 1. 文件路径设置 ---
-    base_dir = "/Users/momo/Desktop/业务相关/2025 影响台风大风"
+    base_dir = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/"
     
     # 输入文件
     nc_file = os.path.join(base_dir, "Combine_Stations_ExMaxWind.nc")

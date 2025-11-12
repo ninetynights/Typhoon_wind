@@ -4,8 +4,8 @@ import os
 
 # --- 1. 设置你的文件路径 ---
 # (请确保路径与你提供的完全一致)
-old_file_path = "/Users/momo/Desktop/业务相关/2025 影响台风大风/All_Typhoons_ExMaxWind.nc"
-new_file_path = "/Users/momo/Desktop/业务相关/2025 影响台风大风/New_Stations_Typhoons_ExMaxWind.nc"
+old_file_path = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/All_Typhoons_ExMaxWind.nc"
+new_file_path = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/Combine_Stations_ExMaxWind.nc"
 
 def compare_station_lists(old_file, new_file):
     print("--- 站点对比开始 ---")

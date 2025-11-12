@@ -1,7 +1,7 @@
 from netCDF4 import Dataset
 
 # 你的文件路径
-nc_path = "/Users/momo/Desktop/业务相关/2025 影响台风大风/All_Typhoons_ExMaxWind.nc"
+nc_path = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/Combine_Stations_ExMaxWind.nc"
 nc = Dataset(nc_path)
 
 # 获取所有台风编号索引（维度：[typhoon, time, station]）

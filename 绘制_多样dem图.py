@@ -1,3 +1,28 @@
+"""
+绘制_多样dem图.py — 指定区域 DEM 可视化工具
+
+总体目的：
+- 从本地 DEM（NetCDF）文件中提取指定经纬度范围的数据并进行可视化，
+  支持 2D 灰度/填色地图、等高线、以及多视角 3D 地形表面图，便于对省级或更小区域地形进行探索与展示。
+
+主要功能：
+- plot_dem_2d：在指定经纬度范围绘制 2D 地形填色图（contourf）并叠加等高线与省界/海岸等要素；
+- plot_dem_3d / plot_dem_3d_advanced：绘制单视角或多视角的 3D 地形表面，支持视角与高度缩放参数；
+- plot_dem_comparison：同时展示 2D 与 3D 的对比视图；
+- get_dem_statistics：计算并打印指定区域的最小/最大/平均/标准差等统计信息；
+- 脚本入口允许交互选择绘图类型并展示浙江示例范围。
+
+输入（需在脚本顶部配置或使用默认值）：
+- DEM_PATH：DEM NetCDF 文件路径（脚本中默认变量名为 'dhgt_gfs'，经度/纬度为 'Lon'/'Lat'）；
+- extent：经纬度范围 [min_lon, max_lon, min_lat, max_lat]，示例为浙江省范围；
+- 可选：视角、缩放因子、绘图分辨率/降采样设置等函数参数。
+
+输出：
+- 在屏幕弹出 matplotlib 图形（2D / 3D / 对比视图），如需保存请在调用处添加 fig.savefig(...)；
+- 在控制台打印 DEM 覆盖范围与指定区域的统计信息。
+
+"""
+
 import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt

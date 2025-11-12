@@ -1,10 +1,29 @@
+
+"""
+总体说明：
+- 目的：快速检查并汇总观测型 NetCDF（按站点×时间×层/要素）中的缺测情况与基本元信息，
+  并生成人可读的文本摘要与两份 CSV 报告（按站点、按时间）。
+- 主要功能：
+  1) 打印文件维度、站点数、时间点数等基本信息（输出到 info_summary.txt）；
+  2) 针对变量 'wind_velocity' 做缺测诊断：总体缺测率、按站点缺测率、按时间缺测率；
+  3) 将按站点与按时间的完整缺测表分别保存为 CSV，且在 TXT 中给出 Top10 摘要；
+  4) 对可能的异常或缺失变量有容错处理并记录警告信息。
+- 输入/输出：
+  - 输入：在脚本顶部的 file_path 变量指定要检查的 NetCDF 文件路径。
+  - 输出（与脚本同目录）：
+      * {basename}_info_summary.txt    （TXT，包含打印的诊断信息）
+      * 4_合并后缺测报告_按站点.csv      （按站点完整缺测率表）
+      * 5_合并后缺测报告_按时间.csv      （按时间完整缺测率表）
+
+"""
+
 import xarray as xr
 import pandas as pd
 import os
 import sys
 
 # --- 1. 定义文件路径 ---
-file_path = "/Users/momo/Desktop/业务相关/2025 影响台风大风/Combine_Stations_ExMaxWind.nc"
+file_path = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/Combine_Stations_ExMaxWind.nc"
 
 # --- 2. 自动生成输出文件路径 ---
 base_dir = os.path.dirname(file_path)

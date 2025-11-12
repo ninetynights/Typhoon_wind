@@ -1,17 +1,33 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""
-大风玫瑰图.py（功能：分级区间 + 分级阈值）
------------------------------------------------
-更新要点：
-  - 1. 移除所有关于 "持续大风" (>= 2h) 的特殊统计。
-  - 2. 核心功能：对风力等级 (8-16级) 进行遍历。
-  - 3. 对每一级：
-     - a) 计算 "区间小时" (Exactly N-level, e.g., 17.2 <= ws <= 20.7)
-     - b) 计算 "阈值小时" (Over N-level, e.g., ws >= 17.2)
-     - 对 a) 和 b) 的结果使用 "统一色标" (Unified per level) 出图，便于对比。
 
-依赖：numpy, pandas, matplotlib, netCDF4
+"""
+大风玫瑰图_分级.py — 基于风速分级的风玫瑰统计与可视化
+
+总体目的：
+- 按蒲氏风力等级（示例为 8–16 级）统计观测时序中不同风向扇区的小时数，
+  分别计算两类指标：区间小时（Exactly N 级）与阈值小时（Over N 级）。
+- 为每个风力等级生成统一色标的风玫瑰图与对应的 CSV 报表，便于等级间的横向比较与归档。
+
+主要功能：
+- 从指定 NetCDF（NC_PATH）读取风速 wind_velocity、风向 wind_direction、台风索引 typhoon_id_index 等变量；
+- 仅统计“台风影响时段”（typhoon_id_index >= 0）内的有效观测（同时有风速与风向）；
+- 对每个等级：
+    1) 计算区间小时：风速位于该等级上下限之间的小时数，按风向扇区累积；
+    2) 计算阈值小时：风速大于等于该等级下限的小时数，按风向扇区累积；
+- 输出每等级的 CSV（扇区小时数与百分比）与 PNG 风玫瑰图（区间 / 阈值，使用该等级统一色标）。
+
+输入（需在脚本顶部配置）：
+- NC_PATH：包含变量 'wind_velocity','wind_direction','typhoon_id_index' 的 NetCDF 文件路径。
+- WIND_BINS：风速等级定义列表（等级名称、最小风速、最大风速）。
+- 输出目录 OUTPUT_DIR、绘图扇区数 N_BINS 和 colormap 等绘图参数。
+
+输出（保存到 OUTPUT_DIR 下的子目录）：
+- csv/Overall_WindRose_Level_{等级}_Exactly_*.csv
+- csv/Overall_WindRose_Level_{等级}_Over_*.csv
+- figs/Overall_WindRose_Level_{等级}_Exactly_*.png
+- figs/Overall_WindRose_Level_{等级}_Over_*.png
+
 """
 
 from pathlib import Path
@@ -24,8 +40,8 @@ from netCDF4 import Dataset
 plt.rcParams['font.sans-serif'] = ['Heiti TC']
 
 # ============= 参数 =============
-NC_PATH    = r"/Users/momo/Desktop/业务相关/2025 影响台风大风/All_Typhoons_ExMaxWind.nc"
-OUTPUT_DIR = Path("/Users/momo/Desktop/业务相关/2025 影响台风大风") / "输出_风玫瑰_分级_区间与阈值"
+NC_PATH    = r"/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/Combine_Stations_ExMaxWind.nc"
+OUTPUT_DIR = Path("/Users/momo/Desktop/业务相关/2025 影响台风大风") / "输出_风玫瑰_分级与超阈值"
 
 # --- 风速分级参数 (蒲氏风力) ---
 # (等级名称, 最小风速, 最大风速)

@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+
 """
 持续大风统计.py（持续超过阈值的小时数；与“总超阈值小时数”不同）
 -------------------------------------------------
@@ -11,8 +10,6 @@
   - 每个台风：CSV + 地图（彩色数字）
   - 总体：CSV + 地图（彩色数字）
   - 目录：/Users/momo/Desktop/业务相关/2025 影响台风大风/输出_持续大风统计/{csv,figs}
-
-依赖：numpy, pandas, matplotlib, cartopy, netCDF4
 """
 
 import re

@@ -1,3 +1,29 @@
+"""
+查看_站点检验.py — 单站点台风影响时序快速可视化
+
+目的与功能（整体说明）：
+- 本脚本用于快速检查并可视化指定台风在指定观测站的逐小时风速与风向（含风向杆/Barbs）。
+- 通过读取 NetCDF 文件中的台风内部索引、风速（wind_velocity）、风向（wind_direction）和时间（INITTIME）变量，
+  提取目标台风在目标站点的影响时间段并绘制时序图，方便人工质检与逐站排查异常。
+
+主要处理步骤：
+1. 解析 NetCDF 中的属性映射（如 id_to_index、index_to_cn、index_to_en）以获得台风内部索引与中英文名称；
+2. 根据用户指定的 target_typhoon_id 与 target_station_id 查找对应内部索引与站点索引；
+3. 从 NetCDF 中提取该站点在该台风影响期的风速、风向与对应时间点；
+4. 计算风向分量（U/V，用于绘制风向杆）并统计简单指标（平均风速、最大风速、持续时长）；
+5. 绘制可视化图表：风速折线、风向杆、每小时风速标注，以及时间轴格式化与统计信息展示。
+
+输入（需在脚本顶部设置或修改）：
+- target_typhoon_id: 字符串，台风外部编号（与 NetCDF 属性 id_to_index 中键一致）
+- target_station_id: 字符串，观测站编号（与 NetCDF 变量 STID 中值一致）
+- nc_path: 指向包含变量 wind_velocity/wind_direction/typhoon_id_index/INITTIME/STID 的 NetCDF 文件路径
+
+输出与展示：
+- 在屏幕上弹出一幅图（matplotlib），显示该台风在该站点的逐小时最大风速与风向杆；
+- 图中包含：每小时风速折线、每点风速文本标注、风向杆、统计行（持续时长、平均/最大风速）；
+- 脚本不默认写出文件；如需保存图片，可在 plt.show() 前调用 fig.savefig(...)。
+"""
+
 from netCDF4 import Dataset, num2date
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,7 +36,7 @@ plt.rcParams['font.sans-serif'] = ['Heiti TC']
 # 用户输入设置
 target_typhoon_id = '2421'
 target_station_id = '58666'
-nc_path = '/Users/momo/Desktop/业务相关/2025 影响台风大风/combine_stations_ExMaxWind.nc'
+nc_path = '/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/combine_stations_ExMaxWind.nc'
 
 # 打开 NetCDF 文件
 nc = Dataset(nc_path)

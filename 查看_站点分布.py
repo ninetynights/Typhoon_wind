@@ -149,15 +149,15 @@ if __name__ == "__main__":
     base_dir = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/"
     
     # 输入文件
-    nc_file = os.path.join(base_dir, "Combine_Stations_ExMaxWind.nc")
+    nc_file = os.path.join(base_dir, "Refined_Combine_Stations_ExMaxWind.nc")
     
     # <--- 修正点 3 (修正路径) ---
     # 根据你的报错日志，CSV文件在 "对比报告" 子目录中
-    csv_sets = os.path.join(base_dir, "对比报告", "1_站点集合分析.csv")
+    csv_sets = os.path.join(base_dir, "nc对比报告", "1_站点集合分析.csv")
     # <--- 修正结束 ---
     
     # 输出文件
-    output_png = os.path.join(base_dir, "station_distribution_map.png")
+    output_png = os.path.join(base_dir, "站点分布.png")
     
     # SHP 路径 (来自你的参考文件)
     # **注意**: 'N:' 路径在 macOS 上很可能无效。

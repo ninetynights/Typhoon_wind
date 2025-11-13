@@ -23,15 +23,15 @@ import os
 import sys
 
 # --- 1. 定义文件路径 ---
-file_path = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/Combine_Stations_ExMaxWind.nc"
+file_path = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/Representative_Stations_Typhoons_ExMaxWind_Fixed.nc"
 
 # --- 2. 自动生成输出文件路径 ---
 base_dir = os.path.dirname(file_path)
 base_name = os.path.splitext(os.path.basename(file_path))[0]
 
 output_txt_path = os.path.join(base_dir, f"{base_name}_info_summary.txt")
-output_csv_station = os.path.join(base_dir, "4_合并后缺测报告_按站点.csv")
-output_csv_time = os.path.join(base_dir, "5_合并后缺测报告_按时间.csv")
+output_csv_station = os.path.join(base_dir, "4_fixed_缺测报告_按站点.csv")
+output_csv_time = os.path.join(base_dir, "5_fixed_合并后缺测报告_按时间.csv")
 
 
 # --- 3. 重定向标准输出 (stdout) ---
@@ -102,7 +102,7 @@ try:
                 # 保存完整的站点缺测报告到 CSV
                 try:
                     percent_missing_by_station_pd.sort_values(ascending=False).to_csv(output_csv_station, encoding='utf-8-sig')
-                    print(f"\n    [✓] 成功: 完整的 1184 个站点的缺测报告已保存到 {output_csv_station}")
+                    print(f"\n    [✓] 成功: 缺测报告已保存到 {output_csv_station}")
                 except Exception as e_csv:
                     print(f"\n    [!] 错误: 无法保存站点缺测 CSV 文件: {e_csv}")
                 
@@ -129,7 +129,7 @@ try:
                 # 保存完整的时间缺测报告到 CSV
                 try:
                     percent_missing_by_time_pd.sort_values(ascending=False).to_csv(output_csv_time, encoding='utf-8-sig')
-                    print(f"\n    [✓] 成功: 完整的 3944 个时间点的缺测报告已保存到 {output_csv_time}")
+                    print(f"\n    [✓] 成功: 缺测报告已保存到 {output_csv_time}")
                 except Exception as e_csv:
                     print(f"\n    [!] 错误: 无法保存时间缺测 CSV 文件: {e_csv}")
             

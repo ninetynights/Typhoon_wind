@@ -1,185 +1,200 @@
+# -*- coding: utf-8 -*-
+"""
+脚本名称：绘制站点数据质量分布图_业务缺测率版_Fixed.py
+功能：
+1. 读取 NC 文件获取经纬度。
+2. 读取 CSV 获取 'Operational_Missing_Rate'。
+3. 按照新的四档标准（优、良、中、差）绘制空间分布图。
+4. 地形背景场设置严格参考了 '查看_站点质量.py'。
+"""
+
 import xarray as xr
 import pandas as pd
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import cartopy.io.shapereader as shpreader
+import numpy as np
 import os
 import sys
 
-def plot_station_quality_map_categorized(nc_file, csv_quality_report, output_png, shp_paths):
-    """
-    绘制站点数据质量分布图。
-    站点将按4个缺测等级（0%, 0-20%, 20-50%, >50%）分色显示。
-    """
-    print("开始绘制分档的站点数据质量分布图...")
-    
-    # --- 1. 加载数据 ---
-    print(f"  正在读取 NC 文件: {nc_file}")
+# ================= 1. 路径配置 (MacOS) =================
+
+# 输入文件路径
+BASE_DIR = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/"
+NC_FILE_PATH = os.path.join(BASE_DIR, "Combine_Stations_ExMaxWind_Fixed.nc")
+CSV_FILE_PATH = os.path.join(BASE_DIR, "4_合并后_区分缺测类型_按站点.csv")
+
+# 输出图片路径
+OUTPUT_FIG_PATH = os.path.join(BASE_DIR, "站点业务缺测率分布图_合并后.png")
+
+# SHP 文件路径 (参考您之前的代码设置，若Mac上没有请忽略，代码会自动处理)
+# 建议：如果您有这些SHP文件，请修改下面的路径为实际路径
+SHP_PATHS = {
+    'zhejiang_province': '/Users/momo/Desktop/GIS_Data/zhejiang_province/Zhejiang_province.shp', 
+    'zhejiang_city': '/Users/momo/Desktop/GIS_Data/zhejiang_city/Zhejiang_city.shp'
+}
+
+# ================= 2. 数据处理函数 =================
+
+def load_and_merge_data():
+    print(f"1. 正在读取 NetCDF 文件 (经纬度源): {NC_FILE_PATH}")
     try:
-        with xr.open_dataset(nc_file) as ds:
-            # 提取所有站点的经纬度信息
-            df_meta = ds[['lat', 'lon']].to_dataframe()
-            # 确保索引是字符串
-            df_meta.index = df_meta.index.astype(str)
-    except FileNotFoundError:
-        print(f"  [!!] 错误: 找不到 NetCDF 文件: {nc_file}")
-        return
-    
-    print(f"  正在读取 CSV 质量报告: {csv_quality_report}")
-    try:
-        # 强制将 STID 读作字符串，以匹配 NC 文件的索引
-        df_quality = pd.read_csv(csv_quality_report, dtype={'STID': str})
-    except FileNotFoundError:
-        print(f"  [!!] 错误: 找不到 CSV 文件: {csv_quality_report}")
-        return
-        
-    # --- 2. 合并元数据和质量数据 ---
-    try:
-        # 将经纬度和缺测百分比合并到一个 DataFrame 中
-        df_all = pd.merge(df_meta, df_quality, left_index=True, right_on='STID', how='inner')
+        with xr.open_dataset(NC_FILE_PATH) as ds:
+            # 提取经纬度
+            # 假设维度是 STID，变量是 lat/lon
+            if 'lat' in ds and 'lon' in ds:
+                lats = ds['lat'].values
+                lons = ds['lon'].values
+                stids = ds['STID'].values
+            else:
+                # 兼容某些NC文件 lat/lon 是坐标的情况
+                stids = ds['STID'].values
+                lats = ds.coords['lat'].values
+                lons = ds.coords['lon'].values
+            
+            # 转为 DataFrame
+            df_loc = pd.DataFrame({'STID': stids, 'Lat': lats, 'Lon': lons})
+            df_loc['STID'] = df_loc['STID'].astype(str).str.strip()
+            
     except Exception as e:
-        print(f"  [!!] 错误: 合并数据时出错: {e}")
-        return
+        print(f"  [!] 读取 NC 文件失败: {e}")
+        return None
 
-    # --- 3. 按你的4档规则分离站点 ---
-    df_green = df_all[df_all['missing_percent'] == 0.0]
-    df_yellow = df_all[(df_all['missing_percent'] > 0.0) & 
-                       (df_all['missing_percent'] <= 20.0)]
-    df_orange = df_all[(df_all['missing_percent'] > 20.0) & 
-                       (df_all['missing_percent'] <= 50.0)]
-    df_red = df_all[df_all['missing_percent'] > 50.0]
+    print(f"2. 正在读取 CSV 文件 (质量源): {CSV_FILE_PATH}")
+    try:
+        df_csv = pd.read_csv(CSV_FILE_PATH)
+        if 'STID' not in df_csv.columns:
+            print("  [!] CSV 文件缺少 'STID' 列")
+            return None
+        if 'Operational_Missing_Rate' not in df_csv.columns:
+            print("  [!] CSV 文件缺少 'Operational_Missing_Rate' 列")
+            return None
+            
+        df_csv['STID'] = df_csv['STID'].astype(str).str.strip()
+        
+    except Exception as e:
+        print(f"  [!] 读取 CSV 文件失败: {e}")
+        return None
 
-    print(f"  站点质量分类:")
-    print(f"    - [绿色] 无缺测 (0%): {len(df_green)} 个")
-    print(f"    - [黄色] 缺测 0%-20%: {len(df_yellow)} 个")
-    print(f"    - [橙色] 缺测 20%-50%: {len(df_orange)} 个")
-    print(f"    - [红色] 缺测 > 50%: {len(df_red)} 个")
-    print(f"  总计: {len(df_green) + len(df_yellow) + len(df_orange) + len(df_red)} / {len(df_all)} 个站点")
+    print("3. 正在合并数据...")
+    # 内连接合并
+    df_merged = pd.merge(df_csv, df_loc, on='STID', how='inner')
+    print(f"   合并后有效站点数: {len(df_merged)}")
+    
+    return df_merged
 
+# ================= 3. 绘图主函数 =================
 
-    # --- 4. 开始绘图 (参考你的样式) ---
-    plt.rcParams['font.sans-serif'] = ['Heiti TC']  # 用来正常显示中文标签
-    plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
+def plot_station_quality(df):
+    # 设置字体 (MacOS 使用 Heiti TC 或 Arial Unicode MS)
+    plt.rcParams['font.sans-serif'] = ['Heiti TC', 'Arial Unicode MS']
+    plt.rcParams['axes.unicode_minus'] = False
 
-    fig = plt.figure(figsize=(10, 10))
-    proj = ccrs.PlateCarree()  # 投影
+    # 创建画布
+    fig = plt.figure(figsize=(12, 12), dpi=200)
+    proj = ccrs.PlateCarree()
     ax = fig.add_subplot(1, 1, 1, projection=proj)
 
-    # 设置地图范围 (来自你的参考代码)
-    lon_min, lon_max = 118, 123
-    lat_min, lat_max = 27, 31.5
-    ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=proj)
+    # --- A. 地形背景场 (参考 '查看_站点质量.py' 设置) ---
+    
+    # 1. 设置范围 (参考原代码: 118-123, 27-31.5)
+    extent = [118.0, 123.0, 27.0, 31.5]
+    ax.set_extent(extent, crs=proj)
 
-    # --- 5. 添加地理底图 ---
-    print("  正在加载地理底图...")
+    print("4. 正在加载地形背景...")
     try:
-        # 优先尝试加载你指定的 SHP 文件
-        zj_shp = shp_paths['zhejiang_province']
-        city_shp = shp_paths['zhejiang_city']
+        # 尝试加载 SHP 文件
+        zj_shp = SHP_PATHS['zhejiang_province']
+        city_shp = SHP_PATHS['zhejiang_city']
         
-        if not os.path.exists(zj_shp) or not os.path.exists(city_shp):
-            raise FileNotFoundError("SHP 文件路径无效")
-
-        zj_reader = shpreader.Reader(zj_shp)
-        ax.add_geometries(zj_reader.geometries(), crs=proj, edgecolor='black', facecolor='None', lw=1.5)
-        
-        city_reader = shpreader.Reader(city_shp)
-        ax.add_geometries(city_reader.geometries(), crs=proj, edgecolor='gray', facecolor='None', lw=0.5)
-        
-        print(f"  [✓] 成功加载本地 SHP 文件。")
+        has_shp = False
+        if os.path.exists(zj_shp):
+            zj_reader = shpreader.Reader(zj_shp)
+            # 省界加粗
+            ax.add_geometries(zj_reader.geometries(), crs=proj, 
+                            edgecolor='black', facecolor='None', lw=1.2, zorder=1)
+            has_shp = True
+            
+        if os.path.exists(city_shp):
+            city_reader = shpreader.Reader(city_shp)
+            # 市界变细，灰色
+            ax.add_geometries(city_reader.geometries(), crs=proj, 
+                            edgecolor='gray', facecolor='None', lw=0.5, linestyle='--', zorder=1)
+            has_shp = True
+            
+        if has_shp:
+            print("   [✓] 已加载本地 SHP 文件作为背景。")
+        else:
+            raise FileNotFoundError("本地 SHP 文件不存在")
 
     except Exception as e:
-        # 备用方案
-        print(f"  [!] 警告: 加载本地 SHP 文件失败 ({e})。")
-        print("         将使用 Cartopy 默认的省界和海岸线作为备用底图。")
-        
+        print(f"   [!] 未找到本地 SHP 文件或加载失败 ({e})，切换至 Cartopy 默认背景。")
+        # 备用方案：使用 Cartopy 自带数据
         provinces = cfeature.NaturalEarthFeature(
             category='cultural',
-            name='admin_1_states_provinces',
+            name='admin_1_states_provinces_lines',
             scale='10m',
             facecolor='none',
             edgecolor='black'
         )
-        ax.add_feature(provinces, lw=0.8)
-        ax.add_feature(cfeature.COASTLINE, lw=1.0)
-        ax.add_feature(cfeature.LAKES, alpha=0.5)
-        ax.add_feature(cfeature.RIVERS)
+        ax.add_feature(provinces, lw=0.8, zorder=1)
+        ax.add_feature(cfeature.COASTLINE.with_scale('10m'), lw=1.0, zorder=1)
+        ax.add_feature(cfeature.BORDERS, linestyle=':', lw=0.5, zorder=1)
+        # 可选：添加河流湖泊增加细节
+        ax.add_feature(cfeature.LAKES, alpha=0.3)
 
-    # 绘制网格线 (来自你的参考代码)
-    gl = ax.gridlines(crs=proj, draw_labels=True, linewidth=1, color='gray', alpha=0.5, linestyle='--')
+    # 网格线 (参考原代码风格)
+    gl = ax.gridlines(crs=proj, draw_labels=True, linewidth=0.5, color='gray', alpha=0.4, linestyle='--')
     gl.top_labels = False
     gl.right_labels = False
-    gl.xlabel_style = {'size': 12}
-    gl.ylabel_style = {'size': 12}
+    gl.xlabel_style = {'size': 10}
+    gl.ylabel_style = {'size': 10}
 
-    # --- 6. 绘制四类站点 ---
-    # 为了让高亮站点显示在最上层，我们按 Green -> Yellow -> Orange -> Red 的顺序绘制
-    print("  正在绘制站点...")
+    # --- B. 站点绘制 (按新标准分级) ---
     
-    # [蓝色] 无缺测 (0%)
-    ax.scatter(df_green['lon'], df_green['lat'],
-               s=12, 
-               color='blue',
-               label=f'无缺测 (0%) ({len(df_green)})',
-               alpha=0.6, 
-               transform=proj)
+    print("5. 正在绘制分类站点...")
+    col_name = 'Operational_Missing_Rate'
+    
+    # 1. 优: 0% (完美) -> 蓝色
+    df_opt = df[df[col_name] == 0]
+    ax.scatter(df_opt['Lon'], df_opt['Lat'], s=15, c='dodgerblue', 
+               label=f'优: 0% ({len(df_opt)}个)', alpha=0.8, transform=proj, zorder=2)
 
-    # [绿色] 缺测 0-20%
-    ax.scatter(df_yellow['lon'], df_yellow['lat'],
-               s=12, 
-               color='green',
-               linewidth=0.5,
-               label=f'缺测 0-20% ({len(df_yellow)})',
-               alpha=0.7, 
-               transform=proj)
+    # 2. 良: 0% < x < 5% -> 绿色
+    df_good = df[(df[col_name] > 0) & (df[col_name] < 5)]
+    ax.scatter(df_good['Lon'], df_good['Lat'], s=20, c='limegreen', 
+               label=f'良: 0-5% ({len(df_good)}个)', alpha=0.8, transform=proj, zorder=3)
 
-    # [橙色] 缺测 20-50%
-    ax.scatter(df_orange['lon'], df_orange['lat'],
-               s=12, 
-               color='orange',
-               linewidth=0.5,
-               label=f'缺测 20-50% ({len(df_orange)})',
-               alpha=0.9, 
-               transform=proj)
+    # 3. 中: 5% <= x <= 10% -> 橙色
+    df_fair = df[(df[col_name] >= 5) & (df[col_name] <= 10)]
+    ax.scatter(df_fair['Lon'], df_fair['Lat'], s=40, c='orange', marker='D',
+               label=f'中: 5-10% ({len(df_fair)}个)', alpha=0.9, edgecolors='white', lw=0.5, transform=proj, zorder=4)
 
-    # [红色] 缺测 > 50%
-    ax.scatter(df_red['lon'], df_red['lat'],
-               s=15, # 让红点最大，最显眼
-               color='red',
-               linewidth=0.5,
-               label=f'缺测 > 50% ({len(df_red)})',
-               alpha=1.0,
-               transform=proj)
+    # 4. 差: > 10% -> 红色
+    df_poor = df[df[col_name] > 10]
+    ax.scatter(df_poor['Lon'], df_poor['Lat'], s=60, c='red', marker='X',
+               label=f'差: >10% ({len(df_poor)}个)', alpha=1.0, edgecolors='black', lw=0.5, transform=proj, zorder=5)
 
-    # --- 7. 添加图例和标题并保存 ---
-    ax.legend(loc='upper right', markerscale=2, fontsize=10) # 缩小一点字号以放下4个条目
-    ax.set_title(f'站点数据质量分布图 (共 {len(df_all)} 站)', fontsize=16)
+    # --- C. 图例与保存 ---
+    
+    # 图例
+    ax.legend(loc='lower right', fontsize=11, framealpha=0.9)
+    
+    # 标题
+    plt.title(f"台风大风代表站观测质量分布图\n总站数: {len(df)}", fontsize=15, pad=10)
 
-    plt.savefig(output_png, dpi=300, bbox_inches='tight')
-    print(f"\n✅ 成功! 站点质量分档图已保存到:\n   {output_png}")
+    # 保存
+    plt.savefig(OUTPUT_FIG_PATH, bbox_inches='tight', pad_inches=0.1)
+    print(f"\n✅ 绘图完成! 图片已保存至: {OUTPUT_FIG_PATH}")
+    # plt.show() # 在服务器或非交互环境下可注释此行
 
+# ================= 4. 主程序入口 =================
 
-# --- 脚本主程序入口 ---
 if __name__ == "__main__":
+    # 1. 加载合并数据
+    df_data = load_and_merge_data()
     
-    # --- 1. 文件路径设置 ---
-    base_dir = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/"
-    
-    # 输入文件
-    nc_file = os.path.join(base_dir, "Combine_Stations_ExMaxWind.nc")
-    csv_quality_report = os.path.join(base_dir, "4_合并后缺测报告_按站点.csv")
-    
-    # 输出文件
-    output_png = os.path.join(base_dir, "station_quality_map.png")
-    
-    # SHP 路径 (来自你的参考文件)
-    # **注意**: 'N:' 路径在 macOS 上很可能无效。
-    # 请确保这些路径对你当前的系统是正确的，否则脚本将自动使用备用底图。
-    shp_paths = {
-        'zhejiang_province': 'N:/00_GIS/shp/zhejiang/zhejiang_province/Zhejiang_province.shp',
-        'zhejiang_city': 'N:/00_GIS/shp/zhejiang/zhejiang_city/Zhejiang_city.shp'
-    }
-
-    # --- 2. 运行绘图函数 ---
-    plot_station_quality_map_categorized(nc_file, csv_quality_report, output_png, shp_paths)
+    if df_data is not None:
+        # 2. 执行绘图
+        plot_station_quality(df_data)

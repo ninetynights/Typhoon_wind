@@ -39,7 +39,7 @@ def combine_authoritative_nc_files(file_path_national, file_path_township, outpu
             print(f"  国家站独有站点: {len(national_only)} 个")
             print(f"  乡镇站独有站点: {len(township_only)} 个")
             print(f"  ---------------------------------")
-            print(f"  最终合并站点总数: {total_final_stations} 个 (预期 1184 个)")
+            print(f"  最终合并站点总数: {total_final_stations} 个 ")
             
             if total_final_stations == 0:
                 print("没有站点可合并。")
@@ -102,7 +102,7 @@ def combine_authoritative_nc_files(file_path_national, file_path_township, outpu
             # 保存到 NetCDF
             ds_final.to_netcdf(output_filepath, encoding=encoding)
             
-            print(f"\n✅ 成功! 合并后的权威文件已保存到:")
+            print(f"\n✅ 成功! 合并后的nc文件已保存到:")
             print(f"   {output_filepath}")
 
     except FileNotFoundError as e:
@@ -117,10 +117,10 @@ if __name__ == "__main__":
     # *** 请根据你的实际路径修改这里 ***
     
     # 输入文件
-    path_national = "/Users/momo/Desktop/业务相关/2025 影响台风大风/All_Typhoons_ExMaxWind.nc"
-    path_township = "/Users/momo/Desktop/业务相关/2025 影响台风大风/Representative_Stations_Typhoons_ExMaxWind.nc"
+    path_national = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/All_Typhoons_ExMaxWind.nc"
+    path_township = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/Representative_Stations_Typhoons_ExMaxWind_Fixed.nc"
     
     # 输出文件
-    path_output = "/Users/momo/Desktop/业务相关/2025 影响台风大风/Combine_Stations_ExMaxWind.nc"
+    path_output = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/Combine_Stations_ExMaxWind_Fixed.nc"
     
     combine_authoritative_nc_files(path_national, path_township, path_output)

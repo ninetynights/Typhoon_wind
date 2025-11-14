@@ -3,10 +3,14 @@
 """
 台风路径聚类 (HDBSCAN 专用版，使用绝对坐标特征)
 
+[版本：新 - 独立版]
+- 本脚本已移除对《台风路径可视化_插值小时.py》的依赖。
+- 所有数据读取与插值功能均由本文件内置的 fallback 函数提供。
+- 这是一个完全独立的脚本，无需修改即可运行。
+
 目的:
 - 专门使用 HDBSCAN 算法对台风“影响时段”路径进行聚类。
 - 聚类特征向量使用“重采样后的绝对坐标序列”，同时考虑地理位置和路径形状。
-- 复用《台风路径可视化_插值小时.py》中的数据读取与插值函数。
 - 调整Min samples参数为2。
 - 打印出未被聚类（噪声/未通过质控）的台风名称。
 - 计算并打印 DBCV (密度聚类有效性) 指标。
@@ -18,7 +22,7 @@
   直接修改下方 CONFIG 字典中的路径和参数，然后运行本文件。
 """
 
-import os, re, math, glob, types, importlib.util, hashlib, sys
+import os, re, math, glob, sys
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Tuple, Set
 
@@ -59,10 +63,10 @@ except Exception:
 # ------------------ CONFIG: 在此修改所有配置 ------------------
 CONFIG = {
     # --- 1. 路径配置 ---
-    "EXCEL_PATH": "/Users/momo/Desktop/业务相关/2025 影响台风大风/2010_2024_影响台风_大风_去除圆规.xlsx",
+    "EXCEL_PATH": "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/2010_2024_影响台风_大风.xlsx",
     "BESTTRACK_DIR": "/Users/momo/Desktop/业务相关/2025 影响台风大风/热带气旋最佳路径数据集",
-    "VIS_SCRIPT_PATH": "/Users/momo/Desktop/业务相关/2025 影响台风大风/代码/台风路径可视化_插值小时.py",
-    "OUT_DIR": "/Users/momo/Desktop/业务相关/2025 影响台风大风/输出_影响段聚类_HDBSCAN_优化版_去除圆规_v3",
+    # "VIS_SCRIPT_PATH": "...", # <-- [移除] 不再需要此配置
+    "OUT_DIR": "/Users/momo/Desktop/业务相关/2025 影响台风大风/输出_影响段聚类_HDBSCAN_优化版",
 
     # --- 2. Excel 列名 ---
     "ID_COL": "中央台编号",
@@ -249,18 +253,9 @@ def _fallback_read_excel_windows(path: str, id_col: str, st_col: str, en_col: st
     df = df.dropna(subset=[id_col, st_col, en_col]).sort_values([id_col, st_col]).reset_index(drop=True)
     return df
 
-# ------------------ 绑定函数（优先使用可视化脚本） ------------------
+# ------------------ [移除] 绑定函数（不再需要） ------------------
+# [移除] load_vis_module 函数被删除
 
-def load_vis_module(path: str) -> types.ModuleType:
-    mname = "ty_vis_hourly_" + hashlib.md5(path.encode("utf-8")).hexdigest()[:10]
-    spec = importlib.util.spec_from_file_location(mname, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"无法加载可视化脚本：{path}")
-    mod = importlib.util.module_from_spec(spec)
-    sys_modules = __import__('sys').modules
-    sys_modules[mname] = mod
-    spec.loader.exec_module(mod)
-    return mod
 
 # ------------------ 质控 / 重采样 / 向量化 ------------------
 @dataclass
@@ -464,7 +459,9 @@ def main():
     cfg = CONFIG
     os.makedirs(cfg["OUT_DIR"], exist_ok=True)
     
-    # --- [修改] 绑定函数 ---
+    # --- [修改] 绑定函数 (方案一：完全独立) ---
+    print("...[方案一] 本脚本已独立，将使用内置的 'fallback' 函数。")
+    
     # 定义一个带所有参数的 fallback loader
     fallback_loader = lambda p: _fallback_read_excel_windows(p, 
                                                              cfg["ID_COL"], 
@@ -472,23 +469,14 @@ def main():
                                                              cfg["EN_COL"], 
                                                              cfg["CN_NAME_COL"], 
                                                              cfg["EN_NAME_COL"])
+
+    # 永久绑定 Fallback 函数
+    iter_needed_segments = _fallback_iter_needed_segments
+    hourly_interp        = _fallback_hourly_interp
+    read_excel_windows   = fallback_loader
     
-    print(f'加载可视化脚本函数从: {cfg["VIS_SCRIPT_PATH"]} ...')
-    try:
-        VIS = load_vis_module(cfg["VIS_SCRIPT_PATH"])
-        iter_needed_segments = getattr(VIS, 'iter_needed_segments', _fallback_iter_needed_segments)
-        hourly_interp        = getattr(VIS, 'hourly_interp',        _fallback_hourly_interp)
-        
-        # 始终使用 fallback loader 来确保能读取名称列
-        print("...使用内置 fallback 'read_excel_windows' 以确保读取名称列。")
-        read_excel_windows = fallback_loader
-        print("...加载成功。")
-        
-    except Exception as e:
-        print(f"警告：无法从 {cfg['VIS_SCRIPT_PATH']} 加载函数 ({e})，将使用内置的兜底实现。")
-        iter_needed_segments = _fallback_iter_needed_segments
-        hourly_interp        = _fallback_hourly_interp
-        read_excel_windows   = fallback_loader # 使用新的 fallback
+    print("...函数绑定完成。")
+
 
     print(f'读取 Excel: {cfg["EXCEL_PATH"]} ...')
     dfx = read_excel_windows(cfg["EXCEL_PATH"])
@@ -575,7 +563,7 @@ def main():
         random_state=cfg["RANDOM_STATE"])
     
     k_eff = int(len(np.unique(labels[labels>=0]))) if (labels.size>0) else 0
-    noise_ratio = float((labels<0).sum()/labels.size)
+    noise_ratio = float((labels<0).sum()/labels.size) if labels.size > 0 else 0.0 # 增加空值保护
     
     # --- [修改] 打印所有分数 ---
     print(f"HDBSCAN：簇数(不含噪声)={k_eff}，轮廓(去噪)={s_score:.3f}，DBCV(稳定性)={dbcv_score:.3f}，噪声占比={noise_ratio:.2%}")

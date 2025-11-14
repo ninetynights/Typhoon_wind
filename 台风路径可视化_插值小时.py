@@ -29,7 +29,7 @@ matplotlib.rcParams['axes.unicode_minus'] = False
 
 # ------------------ 路径 ------------------
 BESTTRACK_DIR = "/Users/momo/Desktop/业务相关/2025 影响台风大风/热带气旋最佳路径数据集"
-EXCEL_PATH    = "/Users/momo/Desktop/业务相关/2025 影响台风大风/2010_2024_影响台风_大风.xlsx"
+EXCEL_PATH    = "/Users/momo/Desktop/业务相关/2025 影响台风大风/数据/2010_2024_影响台风_大风.xlsx"
 OUTPUT_DIR    = os.path.join(os.path.dirname(EXCEL_PATH), "输出_逐小时仅Excel")
 
 # Excel 列名

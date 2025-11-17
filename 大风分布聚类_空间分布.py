@@ -50,7 +50,7 @@ CSV_EXACT_PATH  = "/Users/momo/Desktop/业务相关/2025 影响台风大风/输�
 SHP_CITY_PATH   = r"/Users/momo/Desktop/业务相关/2025 影响台风大风/地形文件/shapefile/市界/浙江市界.shp"
 
 # 【修改】这里是 *总的* 输出根目录
-OUTPUT_DIR = Path("/Users/momo/Desktop/业务相关/2025 影响台风大风/输出_大风分级统计/聚类结果") 
+OUTPUT_DIR = Path("/Users/momo/Desktop/业务相关/2025 影响台风大风/输出_大风分级统计/大风累积空间聚类结果") 
 
 # 定义我们要分析的任务 (已扩展)
 # 【修改】为每个任务增加了 "output_subdir" 键

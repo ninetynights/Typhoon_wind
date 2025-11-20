@@ -337,7 +337,7 @@ if __name__ == "__main__":
     CLUSTER_CSV_PATH = "/Users/momo/Desktop/业务相关/2025 影响台风大风/输出_大风分级统计/输出_台风聚类_Std_UMAP_HDBSCAN_10级及以上_ms2_viz0.1/Typhoon_Cluster_Assignments_HDBSCAN_10级及以上.csv"
 
     # --- [新] 输出目录 ---
-    OUTPUT_DIR_CLUSTER = os.path.join(BASE_DIR, "输出_10级及以上聚类路径图")
+    OUTPUT_DIR_CLUSTER = os.path.join("/Users/momo/Desktop/业务相关/2025 影响台风大风/输出_大风分级统计/输出_聚类路径图_10级及以上")
     os.makedirs(OUTPUT_DIR_CLUSTER, exist_ok=True)
     
     # --- [S1] 加载 NC 筛选的台风ID ---

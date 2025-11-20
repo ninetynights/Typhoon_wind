@@ -57,9 +57,9 @@ BASE_OUTPUT_DIR = Path("/Users/momo/Desktop/业务相关/2025 影响台风大风
 
 # --- 我们要分析哪个级别？---
 LEVEL_CONFIG = {
-    "thresh_min": 24.5,
-    "thresh_max": np.inf,
-    "name": "10级及以上",
+    "thresh_min": 17.2,
+    "thresh_max": 24.4,
+    "name": "8-9级",
 }
 
 # --- 【关键】HDBSCAN 参数设定 ---
